@@ -144,7 +144,7 @@ f_tfMul(mult) =>
 f_tfDiv(divr) =>
     secs = math.max(60, timeframe.in_seconds(timeframe.period) / divr)
     secs < 3600  ? str.tostring(math.round(secs / 60)) :
-     secs < 86400? str.tostring(math.round(secs / 3600)) + "H" :
+     secs < 86400 ? str.tostring(math.round(secs / 60)) :   // ← minutes, no "H"
      str.tostring(math.round(secs / 86400)) + "D"
 
 htfTF = autoTF ? f_tfMul(htfMult) : htfManual
