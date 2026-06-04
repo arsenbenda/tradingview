@@ -1,0 +1,647 @@
+//@version=6
+// ============================================================================
+// ICHIMOKU CONFLUENCE STRATEGY [Conservative] — v2.0
+// ============================================================================
+// PATCHES APPLIED (vs original):
+//   1. HTF/LTF timeframe string builder — correct H/D/W/M suffixes
+//   2. ADX regime filter — skip low-trend chop (default 20, toggleable)
+//   3. ATR fallback TP — R:R gate survives when no ABC target is available
+//   4. Score/tier locked at entry (lockedScore, lockedTier)
+//   5. Per-direction trailing stops (trailSLLong / trailSLShort)
+//   6. firedS1/firedS2 reset before entry logic (same-bar re-entry safe)
+//   7. +1R partial lock-in 25% for REV trades
+//   8. contLong requires flatNow (no phantom mid-trade signals)
+//   9. f_tkQuality tidied to explicit if/else chain
+// ============================================================================
+strategy("Ichimoku Confluence Strategy [Conservative] v2",
+     overlay              = true,
+     initial_capital      = 10000,
+     default_qty_type     = strategy.percent_of_equity,
+     default_qty_value    = 100,
+     commission_type      = strategy.commission.percent,
+     commission_value     = 0.05,
+     slippage             = 2,
+     pyramiding           = 0,
+     calc_on_every_tick   = false,
+     max_lines_count      = 500,
+     max_labels_count     = 500,
+     max_boxes_count      = 500)
+
+
+// ============================================================================
+// INPUTS
+// ============================================================================
+grpC = "Ichimoku Components"
+tenkanLen = input.int(9,  "Tenkan",       minval = 1, group = grpC)
+kijunLen  = input.int(26, "Kijun",        minval = 1, group = grpC)
+spanBLen  = input.int(52, "Senkou B",     minval = 1, group = grpC)
+disp      = input.int(26, "Displacement", minval = 1, group = grpC)
+
+grpTF = "Timeframes"
+autoTF    = input.bool(true,  "Auto-derive HTF/LTF",   group = grpTF)
+htfMult   = input.int(5,      "HTF multiplier (auto)", minval = 2, maxval = 12, group = grpTF)
+ltfDiv    = input.int(4,      "LTF divisor (auto)",    minval = 2, maxval = 12, group = grpTF)
+htfManual = input.timeframe("1W",  "HTF (manual)", group = grpTF)
+ltfManual = input.timeframe("240", "LTF (manual)", group = grpTF)
+ltfPivLen = input.int(6, "LTF pivot length", minval = 2, group = grpTF)
+
+grpS = "Signals"
+sanyakuValidity = input.int(26,   "Sanyaku validity window (bars)", minval = 5, group = grpS)
+useThreeLine    = input.bool(true, "Require 3-line break on breakout", group = grpS)
+kijunStretchATR = input.float(3.0, "Kijun-stretch threshold (ATR mult)", minval = 1.0, step = 0.5, group = grpS)
+
+grpP = "Price Targets"
+swingLen   = input.int(4,    "Swing sensitivity (bars each side)", minval = 2, group = grpP)
+convTolATR = input.float(2.5, "Convergence tolerance (ATR mult)",  minval = 0.1, step = 0.25, group = grpP)
+
+grpT = "Time Windows"
+useTaito = input.bool(true, "Include Taito Suchi",      group = grpT)
+useTwist = input.bool(true, "Include Kumo-twist date",  group = grpT)
+winHalf  = input.int(2,     "Window half-width (bars)", minval = 0, group = grpT)
+
+grpH = "Confluence, Gate & Risk"
+revealCounter = input.bool(true,  "Trade counter-trend (else HTF-gated out)", group = grpH)
+tierHiMin     = input.int(4,      "HIGH tier: min score",    minval = 1, maxval = 6, group = grpH)
+tierModMin    = input.int(2,      "MODERATE tier: min score",minval = 1, maxval = 6, group = grpH)
+riskHi        = input.float(1.7,  "Risk % on HIGH tier",     minval = 0.1, step = 0.1, group = grpH)
+riskMod       = input.float(1.0,  "Risk % on MODERATE tier", minval = 0.1, step = 0.1, group = grpH)
+tradeModerate = input.bool(true,  "Trade MODERATE tier (else HIGH only)", group = grpH)
+
+grpRR = "Reward:Risk Filter (entry gate only)"
+minRR         = input.float(1.2, "Minimum reward:risk to enter",    minval = 0.0, step = 0.1, group = grpRR)
+capStopATR    = input.bool(true, "Cap stop at max ATR distance",    group = grpRR)
+maxStopATR    = input.float(2.0, "Max stop distance (ATR mult)",    minval = 0.5, step = 0.5, group = grpRR)
+// PATCH 3: fallback TP when no ABC target exists — keeps R:R gate alive
+fallbackTpATR = input.float(0.0, "Fallback TP (ATR×, 0 = off)",    minval = 0.0, step = 0.5, group = grpRR)
+
+grpHS = "HTF Regime Strength"
+useHtfStrength = input.bool(true,  "Add HTF trend-strength to score", group = grpHS)
+htfThickMin    = input.float(1.25, "Strong-trend cloud thickness (ATR)", minval = 0.1, step = 0.25, group = grpHS)
+
+// PATCH 2: ADX regime filter — blocks entries in choppy, low-trend conditions
+grpADX = "Regime Filter (ADX)"
+useAdxFilter = input.bool(true,  "Enable ADX regime filter",  group = grpADX)
+adxLen       = input.int(14,     "ADX length",                minval = 5, group = grpADX)
+adxMin       = input.float(20.0, "Min ADX for entry",         minval = 0.0, step = 1.0, group = grpADX)
+
+grpLTF = "LTF Execution Timing"
+ltfTimeEntry = input.bool(true,  "Use LTF to time ENTRY",         group = grpLTF)
+ltfTimeExit  = input.bool(false, "Use LTF to time EXIT partials", group = grpLTF)
+
+grpO = "Orders & Exits"
+splitStage1 = input.int(25, "Stage 1 exit % (opposing TK cross)", minval = 0, maxval = 50, group = grpO)
+splitStage2 = input.int(25, "Stage 2 exit % (Kijun cross)",       minval = 0, maxval = 50, group = grpO)
+// PATCH 7: +1R partial lock-in for REV trades
+use1RLock   = input.bool(true, "Lock 25% at +1R (REV trades only)", group = grpO)
+trailKijun  = input.bool(true, "Trail stop along Kijun",            group = grpO)
+drawPlan    = input.bool(true, "Draw plan on chart",                group = grpO)
+
+grpD = "Backtest Window"
+useDateFilter = input.bool(false, "Limit to date range", group = grpD)
+startDate     = input.time(timestamp("01 Jan 2020 00:00"), "Start", group = grpD)
+endDate       = input.time(timestamp("01 Jan 2030 00:00"), "End",   group = grpD)
+inWindow      = not useDateFilter or (time >= startDate and time <= endDate)
+
+
+// ============================================================================
+// ICHIMOKU COMPONENTS
+// ============================================================================
+f_midpoint(len) => math.avg(ta.highest(len), ta.lowest(len))
+tenkan  = f_midpoint(tenkanLen)
+kijun   = f_midpoint(kijunLen)
+senkouA = math.avg(tenkan, kijun)
+senkouB = f_midpoint(spanBLen)
+atr14   = ta.atr(14)
+
+cloudTop    = math.max(senkouA[disp], senkouB[disp])
+cloudBot    = math.min(senkouA[disp], senkouB[disp])
+priceAbove  = close > cloudTop
+priceBelow  = close < cloudBot
+cloudBull   = senkouA[disp] > senkouB[disp]
+chikouAbove = close > high[disp]
+chikouBelow = close < low[disp]
+fwdTwistUp   = senkouA > senkouB and senkouA[1] <= senkouB[1]
+fwdTwistDown = senkouA < senkouB and senkouA[1] >= senkouB[1]
+
+// PATCH 2: ADX value computed here for use in entry gates below
+[diPlus, diMinus, adxVal] = ta.dmi(adxLen, adxLen)
+adxOK = not useAdxFilter or adxVal >= adxMin
+
+
+// ============================================================================
+// PATCH 1: TIMEFRAME BUILDER — FIXED
+// Original bugs: sub-1h branch produced no unit suffix; 1h-24h branch
+// divided by 60 instead of 3600, generating wrong TF strings.
+// ============================================================================
+f_tfMul(mult) =>
+    secs = timeframe.in_seconds(timeframe.period) * mult
+    secs < 60       ? "1" :
+     secs < 3600    ? str.tostring(math.round(secs / 60)) :
+     secs < 86400   ? str.tostring(math.round(secs / 3600))  + "H" :
+     secs < 604800  ? str.tostring(math.round(secs / 86400)) + "D" :
+     secs < 2592000 ? str.tostring(math.round(secs / 604800)) + "W" :
+     str.tostring(math.round(secs / 2592000)) + "M"
+
+f_tfDiv(divr) =>
+    secs = math.max(60, timeframe.in_seconds(timeframe.period) / divr)
+    secs < 3600  ? str.tostring(math.round(secs / 60)) :
+     secs < 86400? str.tostring(math.round(secs / 3600)) + "H" :
+     str.tostring(math.round(secs / 86400)) + "D"
+
+htfTF = autoTF ? f_tfMul(htfMult) : htfManual
+ltfTF = autoTF ? f_tfDiv(ltfDiv)  : ltfManual
+
+
+// ============================================================================
+// HTF + LTF DATA (anti-repaint)
+// ============================================================================
+f_htfData() =>
+    tk = f_midpoint(tenkanLen)
+    kj = f_midpoint(kijunLen)
+    sa = math.avg(tk, kj)
+    sb = f_midpoint(spanBLen)
+    ct = math.max(sa[disp], sb[disp])
+    cb = math.min(sa[disp], sb[disp])
+    int reg = close > ct ? 1 : close < cb ? -1 : 0
+    ha = ta.atr(14)
+    thick = na(ha) or ha == 0 ? 0.0 : math.abs(sa[disp] - sb[disp]) / ha
+    kjSlope = kj > kj[1] ? 1 : kj < kj[1] ? -1 : 0
+    [reg, thick, kjSlope]
+[htfRegime, htfThick, htfKjSlope] = request.security(syminfo.tickerid, htfTF, f_htfData(), lookahead = barmerge.lookahead_off)
+
+f_ltfPivotDir() =>
+    ph = ta.pivothigh(ltfPivLen, ltfPivLen)
+    pl = ta.pivotlow(ltfPivLen, ltfPivLen)
+    var int dir = 0
+    if not na(pl)
+        dir := 1
+    if not na(ph)
+        dir := -1
+    dir
+ltfPivotDir = request.security(syminfo.tickerid, ltfTF, f_ltfPivotDir(), lookahead = barmerge.lookahead_off)
+
+
+// ============================================================================
+// TK QUALITY + 3-LINE BREAK
+// PATCH 9: f_tkQuality rewritten as explicit if/else chain (cleaner, debuggable)
+// ============================================================================
+tkUp   = ta.crossover(tenkan, kijun)
+tkDown = ta.crossunder(tenkan, kijun)
+tkBull = tenkan > kijun
+
+f_tkQuality(isUp) =>
+    aligned = isUp ? priceAbove  : priceBelow
+    chk     = isUp ? chikouAbove : chikouBelow
+    string q = "LOW"
+    if aligned or chk
+        q := "MODERATE"
+    if aligned and chk
+        q := "HIGH"
+    q
+
+threeLineUp   = close > tenkan and close > kijun and close > cloudTop
+threeLineDown = close < tenkan and close < kijun and close < cloudBot
+breakUpOK     = useThreeLine ? threeLineUp   : priceAbove
+breakDownOK   = useThreeLine ? threeLineDown : priceBelow
+
+
+// ============================================================================
+// SANYAKU STATE MACHINE
+// ============================================================================
+var int  sState  = 0
+var bool sBull   = true
+var int  sAnchor = na
+
+if sState == 0
+    if tkUp and priceBelow
+        sState  := 1
+        sBull   := true
+        sAnchor := bar_index
+    else if tkDown and priceAbove
+        sState  := 1
+        sBull   := false
+        sAnchor := bar_index
+else if sState == 1
+    expired = (bar_index - sAnchor) > sanyakuValidity
+    tkBroke = sBull ? (tenkan <= kijun) : (tenkan >= kijun)
+    if expired or tkBroke
+        sState  := 0
+        sAnchor := na
+    else if sBull and chikouAbove and priceBelow
+        sState := 2
+    else if not sBull and chikouBelow and priceAbove
+        sState := 2
+else if sState == 2
+    expired     = (bar_index - sAnchor) > sanyakuValidity
+    tkBroke     = sBull ? (tenkan <= kijun) : (tenkan >= kijun)
+    chikouBroke = sBull ? (not chikouAbove) : (not chikouBelow)
+    if expired or tkBroke or chikouBroke
+        sState  := 0
+        sAnchor := na
+
+sanyakuKouten   = sState == 2 and sBull      and breakUpOK
+sanyakuGyakuten = sState == 2 and not sBull  and breakDownOK
+sanyakuFired    = sanyakuKouten or sanyakuGyakuten
+
+var int sTightness = na
+if sanyakuFired
+    sTightness := bar_index - sAnchor
+
+f_tightGrade(b) => na(b) ? "n/a" : b <= 9 ? "TIGHT" : b <= 17 ? "NORMAL" : "LOOSE"
+
+var int setupOriginBar = na
+var int setupTightness = na
+if sanyakuFired
+    setupOriginBar := sAnchor
+    setupTightness  := sTightness
+    sState  := 0
+    sAnchor := na
+else if tkUp or tkDown
+    // TK-cross setups carry no Sanyaku tightness — reset explicitly
+    setupOriginBar := bar_index
+    setupTightness  := na
+
+tkUpQual   = tkUp   and f_tkQuality(true)  != "LOW" and priceAbove
+tkDownQual = tkDown and f_tkQuality(false) != "LOW" and priceBelow
+
+kijunStretched = math.abs(close - kijun) > kijunStretchATR * atr14
+
+int    setupType   = sanyakuKouten   ? 1 : sanyakuGyakuten ? 2 :
+                     tkUpQual        ? 3 : tkDownQual       ? 4 : 0
+bool   setupBull   = setupType == 1 or setupType == 3
+bool   setupActive = setupType != 0
+bool   isSanyaku   = setupType == 1 or setupType == 2
+string setupName   = setupType == 1 ? "SANYAKU KOUTEN"   :
+                     setupType == 2 ? "SANYAKU GYAKUTEN" :
+                     setupType == 3 ? "TK Cross (bull)"  :
+                     setupType == 4 ? "TK Cross (bear)"  : ""
+
+
+// ============================================================================
+// CONTINUATION (LONG ONLY)
+// PATCH 8: flatNow guard added directly to contLong definition so no
+// phantom signals or alerts fire while already in a position.
+// ============================================================================
+bullCloudNow  = senkouA[disp] > senkouB[disp]
+kijunRising   = kijun > kijun[1]
+cloudThickNow = math.abs(senkouA[disp] - senkouB[disp])
+cloudThickOK  = cloudThickNow >= atr14 * 0.5
+pulledBackLong = (low <= tenkan or low <= kijun) or (low[1] <= tenkan[1] or low[1] <= kijun[1])
+resumeLong     = close > tenkan and close > open
+flatNow        = strategy.position_size == 0
+
+// PATCH 8 applied: flatNow is first condition
+contLong  = flatNow and bullCloudNow and priceAbove and htfRegime == 1 and
+             kijunRising and cloudThickOK and pulledBackLong and resumeLong
+contShort = false   // disabled — confirmed net loser across 4 markets
+
+
+// ============================================================================
+// A-B-C SWING + V/N/E TARGETS
+// (renamed swA/swB/swC to avoid shadowing Pine built-ins)
+// ============================================================================
+ph = ta.pivothigh(swingLen, swingLen)
+pl = ta.pivotlow(swingLen,  swingLen)
+var float swP0 = na, var float swP1 = na, var float swP2 = na
+var bool  swT0 = false, var bool swT1 = false, var bool swT2 = false
+var int   swB0 = na,    var int  swB1 = na,    var int  swB2 = na
+
+if not na(ph)
+    swP0 := swP1; swP1 := swP2; swP2 := ph
+    swT0 := swT1; swT1 := swT2; swT2 := true
+    swB0 := swB1; swB1 := swB2; swB2 := bar_index - swingLen
+if not na(pl)
+    swP0 := swP1; swP1 := swP2; swP2 := pl
+    swT0 := swT1; swT1 := swT2; swT2 := false
+    swB0 := swB1; swB1 := swB2; swB2 := bar_index - swingLen
+
+abcValid = not na(swP0) and not na(swP1) and not na(swP2) and (swT0 != swT1) and (swT1 != swT2)
+abcBull  = abcValid and not swT2
+swA = swP0; swB_val = swP1; swC = swP2
+swAbar = swB0; swBbar = swB1; swCbar = swB2
+
+f_targets(isBull) =>
+    vT = na(swB_val) or na(swC)                  ? na : isBull ? swB_val + (swB_val - swC) : swB_val - (swB_val - swC)
+    nT = na(swB_val) or na(swC) or na(swA)        ? na : isBull ? swC + (swB_val - swA)    : swC - (swB_val - swA)
+    eT = na(swB_val) or na(swA)                   ? na : isBull ? swB_val + (swB_val - swA) : swB_val - (swB_val - swA)
+    [vT, nT, eT]
+[tgtV, tgtN, tgtE] = f_targets(abcBull)
+
+flatKijun       = math.abs(kijun   - kijun[1])   < syminfo.mintick * 2
+flatSSB         = math.abs(senkouB - senkouB[1]) < syminfo.mintick * 2
+fwdCloudTop     = math.max(senkouA, senkouB)
+fwdCloudBot     = math.min(senkouA, senkouB)
+chikouHistLevel = close[disp]
+
+var float[] structLevels = array.new_float()
+array.clear(structLevels)
+if flatKijun
+    array.push(structLevels, kijun)
+if flatSSB
+    array.push(structLevels, senkouB)
+array.push(structLevels, fwdCloudTop)
+array.push(structLevels, fwdCloudBot)
+array.push(structLevels, chikouHistLevel)
+
+f_nearestStruct(price) =>
+    float best     = na
+    float bestDist = na
+    int n = array.size(structLevels)
+    if not na(price) and n > 0
+        for i = 0 to n - 1
+            lvl = array.get(structLevels, i)
+            d   = math.abs(price - lvl)
+            if na(bestDist) or d < bestDist
+                bestDist := d
+                best     := lvl
+    [best, bestDist]
+
+tol = convTolATR * atr14
+f_convergent(tgt) =>
+    [_lvl, d] = f_nearestStruct(tgt)
+    not na(tgt) and not na(d) and d <= tol
+
+convV = f_convergent(tgtV)
+convN = f_convergent(tgtN)
+convE = f_convergent(tgtE)
+
+f_primaryTP() =>
+    float prim     = na
+    float primDist = na
+    cands = array.new_float()
+    flags = array.new_bool()
+    array.push(cands, tgtV); array.push(flags, convV)
+    array.push(cands, tgtN); array.push(flags, convN)
+    array.push(cands, tgtE); array.push(flags, convE)
+    for i = 0 to 2
+        tt = array.get(cands, i)
+        if array.get(flags, i) and not na(tt)
+            dd = math.abs(tt - close)
+            if na(primDist) or dd < primDist
+                primDist := dd
+                prim     := tt
+    prim
+
+primaryTP    = f_primaryTP()
+hasPrimaryTP = not na(primaryTP)
+
+// PATCH 3: fallback TP — ATR projection used when no ABC target available
+fallbackTP     = fallbackTpATR > 0 ? close + (setupBull ? 1 : -1) * fallbackTpATR * atr14 : na
+effectiveTP    = hasPrimaryTP ? primaryTP : fallbackTP
+hasEffectiveTP = not na(effectiveTP)
+
+
+// ============================================================================
+// TIME WINDOWS
+// ============================================================================
+var int[] kihon = array.from(9, 17, 26, 33, 42, 51, 65, 76, 129, 172, 200, 257)
+projOriginBar = not na(setupOriginBar) ? setupOriginBar : swB2
+taitoLen      = (not na(swBbar) and not na(swAbar)) ? math.abs(swBbar - swAbar) : na
+
+var int   cachedOrigin = na
+var int[] kihonCenters = array.new_int()
+if na(cachedOrigin) or cachedOrigin != projOriginBar
+    cachedOrigin := projOriginBar
+    array.clear(kihonCenters)
+    if not na(projOriginBar)
+        for i = 0 to array.size(kihon) - 1
+            c = projOriginBar + array.get(kihon, i)
+            if c > bar_index and c <= bar_index + 300
+                array.push(kihonCenters, c)
+
+taitoCenter = (useTaito and not na(taitoLen) and not na(swCbar)) ? swCbar + taitoLen : na
+twistCenter = useTwist and (fwdTwistUp or fwdTwistDown) ? bar_index + disp : na
+
+f_inAnyWindow() =>
+    bool hit = false
+    int n = array.size(kihonCenters)
+    if n > 0
+        for i = 0 to n - 1
+            if math.abs(bar_index - array.get(kihonCenters, i)) <= winHalf
+                hit := true
+    if not na(taitoCenter) and math.abs(bar_index - taitoCenter) <= winHalf
+        hit := true
+    if not na(twistCenter) and math.abs(bar_index - twistCenter) <= winHalf
+        hit := true
+    hit
+
+nearTimeWindow = f_inAnyWindow()
+ltfConfirms    = setupActive and ((setupBull and ltfPivotDir == 1) or (not setupBull and ltfPivotDir == -1))
+
+
+// ============================================================================
+// GATE + SCORE + SIZING
+// PATCH 4: lockedScore / lockedTier frozen at entry bar
+// ============================================================================
+htfAligned  = setupActive and ((setupBull  and htfRegime ==  1) or (not setupBull and htfRegime == -1))
+htfConflict = setupActive and ((setupBull  and htfRegime == -1) or (not setupBull and htfRegime ==  1))
+setupPasses = setupActive and (not htfConflict or revealCounter)
+htfStrong   = htfThick >= htfThickMin and ((setupBull and htfKjSlope == 1) or (not setupBull and htfKjSlope == -1))
+
+f_score() =>
+    int s = 0
+    s += isSanyaku ? 1 : 0
+    s += (isSanyaku and not na(setupTightness) and f_tightGrade(setupTightness) != "LOOSE") ? 1 : 0
+    s += htfAligned ? 1 : 0
+    s += (useHtfStrength and htfStrong) ? 1 : 0
+    s += hasEffectiveTP ? 1 : 0  // PATCH 3: uses effectiveTP (includes fallback)
+    s += (nearTimeWindow or ltfConfirms) ? 1 : 0
+    s
+
+confScore = setupPasses ? f_score() : 0
+confTier  = confScore >= tierHiMin ? "HIGH" : confScore >= tierModMin ? "MODERATE" : "LOW"
+
+// PATCH 4: lock score and tier at entry; use locked values while in position
+var int    lockedScore = na
+var string lockedTier  = "LOW"
+liveTier = strategy.position_size == 0 ? confTier : lockedTier
+riskPct  = liveTier == "HIGH" ? riskHi : riskMod
+
+rawSL    = setupBull ? cloudBot : cloudTop
+cappedSL = setupBull ? math.max(rawSL, close - maxStopATR * atr14) :
+                       math.min(rawSL, close + maxStopATR * atr14)
+planSL   = capStopATR ? cappedSL : rawSL
+
+rewardDist = hasEffectiveTP ? math.abs(effectiveTP - close) : na
+riskDist   = math.abs(close - planSL)
+rrRatio    = (not na(rewardDist) and not na(riskDist) and riskDist > 0) ? rewardDist / riskDist : na
+rrPasses   = not na(rrRatio) and rrRatio >= minRR
+
+tierOK = confTier == "HIGH" or (confTier == "MODERATE" and tradeModerate)
+
+// PATCH 2: adxOK gates all entry paths
+revLong  = setupPasses and setupBull     and hasEffectiveTP and tierOK and inWindow and rrPasses and adxOK
+revShort = setupPasses and not setupBull and hasEffectiveTP and tierOK and inWindow and rrPasses and adxOK
+conLong  = contLong  and inWindow and adxOK
+conShort = contShort and inWindow and adxOK
+
+goLong  = revLong  or conLong
+goShort = revShort or conShort
+
+entryKindLong  = revLong  ? "REV" : "CON"
+entryKindShort = revShort ? "REV" : "CON"
+
+f_qty() =>
+    float q = na
+    if not na(riskDist) and riskDist > 0
+        q := (strategy.equity * (riskPct / 100.0)) / riskDist
+    q
+tradeQty = f_qty()
+
+
+// ============================================================================
+// ENTRIES
+// PATCH 5: per-direction trailSL variables
+// PATCH 4: lock score/tier at entry
+// PATCH 6: firedS1/S2/1R reset block placed BEFORE entry logic
+// ============================================================================
+ltfEntryOKLong  = not ltfTimeEntry or ltfPivotDir == 1
+ltfEntryOKShort = not ltfTimeEntry or ltfPivotDir == -1
+
+// PATCH 5: separate trailing stops for long and short
+var float trailSLLong  = na
+var float trailSLShort = na
+
+var string entryKind    = "REV"
+var int    lastConExitBar = na
+contCooldown = 12
+
+// PATCH 6: reset all exit flags BEFORE any entry logic fires
+// This ensures a same-bar flat → re-entry does not inherit stale flags
+var bool firedS1    = false
+var bool firedS2    = false
+var bool fired1RLock = false  // PATCH 7
+if flatNow
+    firedS1     := false
+    firedS2     := false
+    fired1RLock := false
+
+if flatNow and entryKind == "CON" and strategy.position_size[1] != 0
+    lastConExitBar := bar_index
+cooldownOK = na(lastConExitBar) or (bar_index - lastConExitBar) > contCooldown
+
+allowConLong  = conLong  and cooldownOK
+allowConShort = conShort and cooldownOK
+
+entryLong  = revLong  or allowConLong
+entryShort = revShort or allowConShort
+
+canEnterLong  = entryLong  and not na(tradeQty) and tradeQty > 0 and flatNow and ltfEntryOKLong
+canEnterShort = entryShort and not na(tradeQty) and tradeQty > 0 and flatNow and ltfEntryOKShort
+
+if canEnterLong
+    strategy.entry("Long", strategy.long, qty = tradeQty)
+    trailSLLong := planSL
+    entryKind   := revLong ? "REV" : "CON"
+    lockedScore := confScore   // PATCH 4
+    lockedTier  := confTier    // PATCH 4
+
+if canEnterShort
+    strategy.entry("Short", strategy.short, qty = tradeQty)
+    trailSLShort := planSL
+    entryKind    := revShort ? "REV" : "CON"
+    lockedScore  := confScore  // PATCH 4
+    lockedTier   := confTier   // PATCH 4
+
+
+// ============================================================================
+// EXITS
+// PATCH 5: trailSLLong / trailSLShort used independently
+// PATCH 7: +1R partial lock-in for REV trades
+// ============================================================================
+inLong  = strategy.position_size > 0
+inShort = strategy.position_size < 0
+
+ltfExitOKLong  = not ltfTimeExit or ltfPivotDir == -1
+ltfExitOKShort = not ltfTimeExit or ltfPivotDir == 1
+
+exTKLong   = ta.crossunder(tenkan, kijun)
+exKijunL   = ta.crossunder(close,  kijun)
+exCloudL   = priceBelow
+exTKShort  = ta.crossover(tenkan, kijun)
+exKijunS   = ta.crossover(close,  kijun)
+exCloudS   = priceAbove
+
+if inLong
+    if entryKind == "CON"
+        // Continuation: trail cloud bottom, exit when price tags it
+        trailSLLong := math.max(nz(trailSLLong[1], cloudBot), cloudBot)
+        strategy.exit("L-cloudtrail", from_entry = "Long", stop = trailSLLong)
+    else
+        // PATCH 7: lock in 25% at +1R before staged exits run
+        if use1RLock and not fired1RLock and not na(strategy.position_avg_price)
+            oneR = strategy.position_avg_price + math.abs(strategy.position_avg_price - planSL)
+            if close >= oneR
+                strategy.close("Long", qty_percent = 25, comment = "1R lock")
+                fired1RLock := true
+        // PATCH 5: ratchet trail along Kijun (long side only)
+        if trailKijun and kijun < close
+            trailSLLong := math.max(nz(trailSLLong[1], planSL), kijun)
+        strategy.exit("L-stop", from_entry = "Long", stop = trailSLLong)
+        if exTKLong and not firedS1 and ltfExitOKLong
+            strategy.close("Long", qty_percent = splitStage1, comment = "TP1 TKx")
+            firedS1 := true
+        if exKijunL and not firedS2 and ltfExitOKLong
+            strategy.close("Long", qty_percent = splitStage2, comment = "TP2 Kijunx")
+            firedS2 := true
+        if exCloudL
+            strategy.close("Long", comment = "TP3 cloud loss")
+
+if inShort
+    if entryKind == "CON"
+        // Continuation: trail cloud top, exit when price tags it
+        trailSLShort := math.min(nz(trailSLShort[1], cloudTop), cloudTop)
+        strategy.exit("S-cloudtrail", from_entry = "Short", stop = trailSLShort)
+    else
+        // PATCH 7: lock in 25% at +1R (short side — price moves down)
+        if use1RLock and not fired1RLock and not na(strategy.position_avg_price)
+            oneR = strategy.position_avg_price - math.abs(strategy.position_avg_price - planSL)
+            if close <= oneR
+                strategy.close("Short", qty_percent = 25, comment = "1R lock")
+                fired1RLock := true
+        // PATCH 5: ratchet trail along Kijun (short side only)
+        if trailKijun and kijun > close
+            trailSLShort := math.min(nz(trailSLShort[1], planSL), kijun)
+        strategy.exit("S-stop", from_entry = "Short", stop = trailSLShort)
+        if exTKShort and not firedS1 and ltfExitOKShort
+            strategy.close("Short", qty_percent = splitStage1, comment = "TP1 TKx")
+            firedS1 := true
+        if exKijunS and not firedS2 and ltfExitOKShort
+            strategy.close("Short", qty_percent = splitStage2, comment = "TP2 Kijunx")
+            firedS2 := true
+        if exCloudS
+            strategy.close("Short", comment = "TP3 cloud loss")
+
+
+// ============================================================================
+// DRAWING + ALERTS
+// ============================================================================
+spaPlot = plot(senkouA, "SpanA", color.new(color.green, 92), offset = disp)
+spbPlot = plot(senkouB, "SpanB", color.new(color.red,   92), offset = disp)
+fill(spaPlot, spbPlot, color = cloudBull ? color.new(color.green, 90) : color.new(color.red, 90))
+plot(tenkan, "Tenkan", color.new(#2962FF, 40), 1)
+plot(kijun,  "Kijun",  color.new(#FF6D00, 40), 2)
+
+// PATCH 5: plot correct trail per direction
+trailPlot = inLong ? trailSLLong : inShort ? trailSLShort : na
+plot(trailPlot, "Trail Stop", color.new(color.red, 0), 1, plot.style_linebr)
+
+if drawPlan and (goLong or goShort)
+    col      = setupBull ? color.teal : color.maroon
+    kindTag  = (goLong and revLong) or (goShort and revShort) ? "REV" : "CON"
+    rrStr    = not na(rrRatio) ? "\nR:R " + str.tostring(math.round(rrRatio, 2)) : ""
+    label.new(bar_index, setupBull ? low : high,
+         setupName + " [" + kindTag + "]\n" + confTier + " " + str.tostring(confScore) + "/6" + rrStr,
+         style    = setupBull ? label.style_label_up : label.style_label_down,
+         color    = color.new(col, 0),
+         textcolor = color.white,
+         size     = size.small)
+
+// Alerts — include score, tier, and ADX in message
+alertcondition(goLong,  "Long entry",  "Ichimoku v2 LONG  — " + confTier + " " + str.tostring(confScore) + "/6 | ADX " + str.tostring(math.round(adxVal, 1)))
+alertcondition(goShort, "Short entry", "Ichimoku v2 SHORT — " + confTier + " " + str.tostring(confScore) + "/6 | ADX " + str.tostring(math.round(adxVal, 1)))
+alertcondition(inLong  and exCloudL,  "Long cloud loss",  "Ichimoku v2: LONG  lost cloud — exit")
+alertcondition(inShort and exCloudS,  "Short cloud loss", "Ichimoku v2: SHORT lost cloud — exit")
+// ============================================================================
+// END v2.0
+// ============================================================================
