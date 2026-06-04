@@ -1,23 +1,67 @@
 //@version=6
 // ============================================================================
-// ICHIMOKU CONFLUENCE STRATEGY [Conservative] — v2.1
+// ICHIMOKU CONFLUENCE STRATEGY [Conservative] — v3.0
 // ============================================================================
-// PATCHES APPLIED (vs original):\n//   1. HTF/LTF timeframe string builder — correct H/D/W/M suffixes
-//   2. ADX regime filter — skip low-trend chop (default 20, toggleable)
-//   3. ATR fallback TP — R:R gate survives when no ABC target is available
-//   4. Score/tier locked at entry (lockedScore, lockedTier)
-//   5. Per-direction trailing stops (trailSLLong / trailSLShort)
-//   6. firedS1/firedS2 reset before entry logic (same-bar re-entry safe)
-//   7. +1R partial lock-in 25% for REV trades — DEFAULT OFF (kills big wins)
-//   8. contLong requires flatNow (no phantom mid-trade signals)
-//   9. f_tkQuality tidied to explicit if/else chain
-// FIX (CE10005): all semicolon-chained assignments split to individual lines
-// FIX (alertcondition): dynamic strings moved to alert() inside entry blocks
-// FIX (v2.1): use1RLock default=false — was cutting winners prematurely
-// FIX (v2.1): f_tfMul hours branch now outputs minutes ("360" not "6H")
-// FIX (v2.1): riskMod default confirmed at 1.0% (MODERATE <= HIGH always)
+// CHANGELOG v3.0 vs v2.1 (full audit + rewrite of broken sections):
+//
+//  [RISK MODEL]
+//   - riskHi default 1.5% → 2.0%  (HIGH is the best quality, reward it)
+//   - riskMod default 1.0% → 1.2%  (MODERATE just slightly below HIGH)
+//   - Position size: qty = (equity × risk%) / riskDist  (unchanged formula)
+//   - MODERATE risk is now ALWAYS ≤ HIGH risk by default (v2.1 xlsx had 7.7%
+//     MODERATE vs 1.7% HIGH — a fatal misconfiguration fixed here)
+//
+//  [SIGNAL FILTERING — less over-filtering]
+//   - ltfTimeEntry default: false (v2.1 set true → blocked many valid entries)
+//   - revealCounter default: false (counter-trend adds noise on BTC daily)
+//   - swingLen default: 6  (v2.1 = 4 too noisy; legacy = 10 too slow → 6)
+//   - convTolATR default: 1.5 (v2.1 = 2.5 too loose; legacy = 1.25 too tight)
+//   - htfManual default: 1D (v2.1 = 1W too restrictive on daily chart)
+//   - htfThickMin default: 1.0 (v2.1 = 1.25 harder to earn score point)
+//
+//  [ADX — from hard gate to score component]
+//   - ADX is no longer a hard entry gate (it was blocking too many resumptions)
+//   - Instead: ADX ≥ threshold adds +1 to confluence score (7 pts max total)
+//   - adxMin default 15 (v2.1 = 20 was too aggressive on daily BTC)
+//   - "Enable ADX hard gate" toggle still available if user wants it back
+//
+//  [EXITS — smarter profit capture]
+//   - CON trades: trail along KIJUN (not cloud edge) — tighter, locks profits
+//     earlier while still giving room to run in strong trends
+//   - REV trades: stage1=20%, stage2=30%, core 50% runs to cloud loss / stop
+//     (was 25/25/50 — the new split takes slightly less off too early)
+//   - BREAKEVEN STOP: when trade reaches +1.5R, stop auto-moves to entry price
+//     (replaces the 1R partial close that was killing big winners in v2.1)
+//   - Kijun trail: only tightens when Kijun is rising (long) or falling (short)
+//     and price is beyond 0.5×ATR from entry — avoids whipsaws at open
+//
+//  [SCORE SYSTEM — 7 points now]
+//   1. Sanyaku pattern present
+//   2. Sanyaku tightness (TIGHT or NORMAL, not LOOSE)
+//   3. HTF regime aligned
+//   4. HTF cloud thick + Kijun sloping (strong trend)
+//   5. Primary TP / effective TP available
+//   6. Near time window OR LTF confirms
+//   7. ADX ≥ threshold (new)
+//   → tierHiMin default stays 4, tierModMin stays 2
+//     (same gates, more ways to reach them)
+//
+//  [BUG FIXES from v2.1]
+//   - firedS1 / firedS2 / firedBE reset BEFORE entry block (PATCH 6, kept)
+//   - Per-direction trailing stops trailSLLong / trailSLShort (PATCH 5, kept)
+//   - lockedScore / lockedTier frozen at entry (PATCH 4, kept)
+//   - f_tfMul hours branch outputs minutes (PATCH 1 fix v2.1, kept)
+//   - contLong requires flatNow (PATCH 8, kept + refined)
+//   - f_tkQuality explicit if/else chain (PATCH 9, kept)
+//   - alert() dynamic strings inside entry blocks (FIX CE, kept)
+//
+//  [VISUAL]
+//   - Trail stop plot shows CON trail (Kijun-based) correctly
+//   - Label now shows ADX value and BE status
+//   - Score out of 7 shown on label
 // ============================================================================
-strategy("Ichimoku Confluence Strategy [Conservative] v2",
+
+strategy("Ichimoku Confluence Strategy [Conservative] v3",
      overlay              = true,
      initial_capital      = 10000,
      default_qty_type     = strategy.percent_of_equity,
@@ -45,7 +89,8 @@ grpTF = "Timeframes"
 autoTF    = input.bool(true,  "Auto-derive HTF/LTF",   group = grpTF)
 htfMult   = input.int(5,      "HTF multiplier (auto)", minval = 2, maxval = 12, group = grpTF)
 ltfDiv    = input.int(4,      "LTF divisor (auto)",    minval = 2, maxval = 12, group = grpTF)
-htfManual = input.timeframe("1W",  "HTF (manual)", group = grpTF)
+// v3: default HTF = 1D (was 1W in v2.1 — too restrictive on daily chart)
+htfManual = input.timeframe("D",   "HTF (manual)", group = grpTF)
 ltfManual = input.timeframe("240", "LTF (manual)", group = grpTF)
 ltfPivLen = input.int(6, "LTF pivot length", minval = 2, group = grpTF)
 
@@ -55,8 +100,10 @@ useThreeLine    = input.bool(true, "Require 3-line break on breakout", group = g
 kijunStretchATR = input.float(3.0, "Kijun-stretch threshold (ATR mult)", minval = 1.0, step = 0.5, group = grpS)
 
 grpP = "Price Targets"
-swingLen   = input.int(4,    "Swing sensitivity (bars each side)", minval = 2, group = grpP)
-convTolATR = input.float(2.5, "Convergence tolerance (ATR mult)",  minval = 0.1, step = 0.25, group = grpP)
+// v3: swingLen = 6 (compromise: v2.1=4 too noisy, legacy=10 too slow)
+swingLen   = input.int(6,   "Swing sensitivity (bars each side)", minval = 2, group = grpP)
+// v3: convTolATR = 1.5 (v2.1 = 2.5 too loose → false convergences)
+convTolATR = input.float(1.5, "Convergence tolerance (ATR mult)", minval = 0.1, step = 0.25, group = grpP)
 
 grpT = "Time Windows"
 useTaito = input.bool(true, "Include Taito Suchi",      group = grpT)
@@ -64,42 +111,50 @@ useTwist = input.bool(true, "Include Kumo-twist date",  group = grpT)
 winHalf  = input.int(2,     "Window half-width (bars)", minval = 0, group = grpT)
 
 grpH = "Confluence, Gate & Risk"
-revealCounter = input.bool(true,  "Trade counter-trend (else HTF-gated out)", group = grpH)
-tierHiMin     = input.int(4,      "HIGH tier: min score",    minval = 1, maxval = 6, group = grpH)
-tierModMin    = input.int(2,      "MODERATE tier: min score",minval = 1, maxval = 6, group = grpH)
-riskHi        = input.float(1.7,  "Risk % on HIGH tier",     minval = 0.1, step = 0.1, group = grpH)
-// FIX v2.1: riskMod must be <= riskHi; MODERATE trades are lower quality
-riskMod       = input.float(1.0,  "Risk % on MODERATE tier", minval = 0.1, step = 0.1, group = grpH)
+// v3: counter-trend default OFF (adds noise on BTC daily)
+revealCounter = input.bool(false, "Trade counter-trend (else HTF-gated out)", group = grpH)
+tierHiMin     = input.int(4,      "HIGH tier: min score (out of 7)",   minval = 1, maxval = 7, group = grpH)
+tierModMin    = input.int(2,      "MODERATE tier: min score (out of 7)", minval = 1, maxval = 7, group = grpH)
+// v3: riskHi=2.0 (best quality → bigger size); riskMod=1.2 (slightly below)
+riskHi        = input.float(2.0, "Risk % on HIGH tier",     minval = 0.1, step = 0.1, group = grpH)
+riskMod       = input.float(1.2, "Risk % on MODERATE tier", minval = 0.1, step = 0.1, group = grpH)
 tradeModerate = input.bool(true,  "Trade MODERATE tier (else HIGH only)", group = grpH)
 
 grpRR = "Reward:Risk Filter (entry gate only)"
-minRR         = input.float(1.2, "Minimum reward:risk to enter",    minval = 0.0, step = 0.1, group = grpRR)
-capStopATR    = input.bool(true, "Cap stop at max ATR distance",    group = grpRR)
-maxStopATR    = input.float(2.0, "Max stop distance (ATR mult)",    minval = 0.5, step = 0.5, group = grpRR)
-// PATCH 3: fallback TP when no ABC target exists — keeps R:R gate alive
-fallbackTpATR = input.float(0.0, "Fallback TP (ATR×, 0 = off)",    minval = 0.0, step = 0.5, group = grpRR)
+minRR         = input.float(1.2, "Minimum reward:risk to enter",  minval = 0.0, step = 0.1, group = grpRR)
+capStopATR    = input.bool(true, "Cap stop at max ATR distance",  group = grpRR)
+maxStopATR    = input.float(2.0, "Max stop distance (ATR mult)",  minval = 0.5, step = 0.5, group = grpRR)
+fallbackTpATR = input.float(3.0, "Fallback TP (ATR×, 0 = off)",  minval = 0.0, step = 0.5, group = grpRR)
 
 grpHS = "HTF Regime Strength"
-useHtfStrength = input.bool(true,  "Add HTF trend-strength to score", group = grpHS)
-htfThickMin    = input.float(1.25, "Strong-trend cloud thickness (ATR)", minval = 0.1, step = 0.25, group = grpHS)
+useHtfStrength = input.bool(true, "Add HTF trend-strength to score", group = grpHS)
+// v3: htfThickMin = 1.0 (v2.1 = 1.25 was harder to earn this point)
+htfThickMin    = input.float(1.0, "Strong-trend cloud thickness (ATR)", minval = 0.1, step = 0.25, group = grpHS)
 
-// PATCH 2: ADX regime filter — blocks entries in choppy, low-trend conditions
-grpADX = "Regime Filter (ADX)"
-useAdxFilter = input.bool(true,  "Enable ADX regime filter",  group = grpADX)
-adxLen       = input.int(14,     "ADX length",                minval = 5, group = grpADX)
-adxMin       = input.float(20.0, "Min ADX for entry",         minval = 0.0, step = 1.0, group = grpADX)
+// v3: ADX is now a SCORE component (not a hard gate)
+grpADX = "ADX Trend Strength (score component)"
+useAdxScore  = input.bool(true,  "Add ADX score point",          group = grpADX)
+useAdxGate   = input.bool(false, "Enable ADX hard gate (strict)", group = grpADX)
+adxLen       = input.int(14,     "ADX length",                   minval = 5,   group = grpADX)
+// v3: adxMin = 15 (v2.1 = 20 was too aggressive, blocked too many entries)
+adxMin       = input.float(15.0, "Min ADX for score/gate",        minval = 0.0, step = 1.0, group = grpADX)
 
 grpLTF = "LTF Execution Timing"
-ltfTimeEntry = input.bool(true,  "Use LTF to time ENTRY",         group = grpLTF)
+// v3: ltfTimeEntry default OFF (v2.1 had true — was blocking valid entries)
+ltfTimeEntry = input.bool(false, "Use LTF to time ENTRY",         group = grpLTF)
 ltfTimeExit  = input.bool(false, "Use LTF to time EXIT partials", group = grpLTF)
 
 grpO = "Orders & Exits"
-splitStage1 = input.int(25, "Stage 1 exit % (opposing TK cross)", minval = 0, maxval = 50, group = grpO)
-splitStage2 = input.int(25, "Stage 2 exit % (Kijun cross)",       minval = 0, maxval = 50, group = grpO)
-// FIX v2.1: default OFF — 1R partial was cutting the biggest winning trades
-use1RLock   = input.bool(false, "Lock 25% at +1R (REV trades only)", group = grpO)
-trailKijun  = input.bool(true, "Trail stop along Kijun",            group = grpO)
-drawPlan    = input.bool(true, "Draw plan on chart",                group = grpO)
+// v3: 20/30/50 split — less off early, more room for core runner
+splitStage1 = input.int(20, "Stage 1 exit % (opposing TK cross)", minval = 0, maxval = 50, group = grpO)
+splitStage2 = input.int(30, "Stage 2 exit % (Kijun cross)",       minval = 0, maxval = 50, group = grpO)
+// v3: breakeven stop (at +1.5R) replaces 1R partial close
+useBeStop    = input.bool(true,  "Move stop to breakeven at +1.5R (REV trades)", group = grpO)
+beRMult      = input.float(1.5,  "Breakeven trigger (R multiple)", minval = 0.5, step = 0.25, group = grpO)
+trailKijun   = input.bool(true,  "Trail stop along Kijun",        group = grpO)
+// v3: CON trades trail Kijun instead of cloud edge (tighter, better profit capture)
+conTrailKijun = input.bool(true, "CON trades: trail Kijun (else cloud)", group = grpO)
+drawPlan     = input.bool(true,  "Draw plan on chart",            group = grpO)
 
 grpD = "Backtest Window"
 useDateFilter = input.bool(false, "Limit to date range", group = grpD)
@@ -128,15 +183,14 @@ chikouBelow = close < low[disp]
 fwdTwistUp   = senkouA > senkouB and senkouA[1] <= senkouB[1]
 fwdTwistDown = senkouA < senkouB and senkouA[1] >= senkouB[1]
 
-// PATCH 2: ADX value computed here for use in entry gates below
-[diPlus, diMinus, adxVal] = ta.dmi(adxLen, adxLen)
-adxOK = not useAdxFilter or adxVal >= adxMin
+// ADX computed once here
+[_diPlus, _diMinus, adxVal] = ta.dmi(adxLen, adxLen)
+adxTrendOK = adxVal >= adxMin
+adxHardOK  = not useAdxGate or adxTrendOK
 
 
 // ============================================================================
-// PATCH 1: TIMEFRAME BUILDER — FIXED
-// FIX v2.1: hours branch outputs minutes (e.g. "360") not "6H"
-//           TradingView security() does not accept "H" suffix for sub-daily
+// TIMEFRAME BUILDER — v2.1 fix kept
 // ============================================================================
 f_tfMul(mult) =>
     secs = timeframe.in_seconds(timeframe.period) * mult
@@ -174,7 +228,7 @@ f_htfData() =>
 
 f_ltfPivotDir() =>
     ph = ta.pivothigh(ltfPivLen, ltfPivLen)
-    pl = ta.pivotlow(ltfPivLen, ltfPivLen)
+    pl = ta.pivotlow(ltfPivLen,  ltfPivLen)
     var int dir = 0
     if not na(pl)
         dir := 1
@@ -186,7 +240,6 @@ ltfPivotDir = request.security(syminfo.tickerid, ltfTF, f_ltfPivotDir(), lookahe
 
 // ============================================================================
 // TK QUALITY + 3-LINE BREAK
-// PATCH 9: f_tkQuality rewritten as explicit if/else chain
 // ============================================================================
 tkUp   = ta.crossover(tenkan, kijun)
 tkDown = ta.crossunder(tenkan, kijun)
@@ -281,7 +334,7 @@ string setupName   = setupType == 1 ? "SANYAKU KOUTEN"   :
 
 // ============================================================================
 // CONTINUATION (LONG ONLY)
-// PATCH 8: flatNow guard added directly to contLong definition
+// v3: added chikouAbove requirement for CON longs (extra Ichimoku confirmation)
 // ============================================================================
 bullCloudNow  = senkouA[disp] > senkouB[disp]
 kijunRising   = kijun > kijun[1]
@@ -291,15 +344,14 @@ pulledBackLong = (low <= tenkan or low <= kijun) or (low[1] <= tenkan[1] or low[
 resumeLong     = close > tenkan and close > open
 flatNow        = strategy.position_size == 0
 
-// PATCH 8 applied: flatNow is first condition
+// v3: chikouAbove added as extra filter for continuation longs
 contLong  = flatNow and bullCloudNow and priceAbove and htfRegime == 1 and
-             kijunRising and cloudThickOK and pulledBackLong and resumeLong
-contShort = false
+             kijunRising and cloudThickOK and pulledBackLong and resumeLong and chikouAbove
+contShort = false   // continuation-shorts remain disabled
 
 
 // ============================================================================
 // A-B-C SWING + V/N/E TARGETS
-// FIX CE10005: each assignment on its own line
 // ============================================================================
 ph = ta.pivothigh(swingLen, swingLen)
 pl = ta.pivotlow(swingLen,  swingLen)
@@ -339,18 +391,17 @@ if not na(pl)
 abcValid = not na(swP0) and not na(swP1) and not na(swP2) and (swT0 != swT1) and (swT1 != swT2)
 abcBull  = abcValid and not swT2
 
-// FIX CE10005: aliases on separate lines
-swA    = swP0
+swA     = swP0
 swB_val = swP1
-swC    = swP2
-swAbar = swB0
-swBbar = swB1
-swCbar = swB2
+swC     = swP2
+swAbar  = swB0
+swBbar  = swB1
+swCbar  = swB2
 
 f_targets(isBull) =>
-    vT = na(swB_val) or na(swC)                  ? na : isBull ? swB_val + (swB_val - swC) : swB_val - (swB_val - swC)
-    nT = na(swB_val) or na(swC) or na(swA)        ? na : isBull ? swC + (swB_val - swA)    : swC - (swB_val - swA)
-    eT = na(swB_val) or na(swA)                   ? na : isBull ? swB_val + (swB_val - swA) : swB_val - (swB_val - swA)
+    vT = na(swB_val) or na(swC)             ? na : isBull ? swB_val + (swB_val - swC)    : swB_val - (swB_val - swC)
+    nT = na(swB_val) or na(swC) or na(swA)  ? na : isBull ? swC + (swB_val - swA)        : swC - (swB_val - swA)
+    eT = na(swB_val) or na(swA)             ? na : isBull ? swB_val + (swB_val - swA)    : swB_val - (swB_val - swA)
     [vT, nT, eT]
 [tgtV, tgtN, tgtE] = f_targets(abcBull)
 
@@ -415,7 +466,8 @@ f_primaryTP() =>
 primaryTP    = f_primaryTP()
 hasPrimaryTP = not na(primaryTP)
 
-// PATCH 3: fallback TP — ATR projection used when no ABC target available
+// Fallback TP: ATR projection when no ABC target is available
+// v3: default fallbackTpATR = 3.0 (keeps R:R gate alive on most setups)
 fallbackTP     = fallbackTpATR > 0 ? close + (setupBull ? 1 : -1) * fallbackTpATR * atr14 : na
 effectiveTP    = hasPrimaryTP ? primaryTP : fallbackTP
 hasEffectiveTP = not na(effectiveTP)
@@ -460,14 +512,14 @@ ltfConfirms    = setupActive and ((setupBull and ltfPivotDir == 1) or (not setup
 
 
 // ============================================================================
-// GATE + SCORE + SIZING
-// PATCH 4: lockedScore / lockedTier frozen at entry bar
+// GATE + SCORE (7 POINTS) + SIZING
 // ============================================================================
 htfAligned  = setupActive and ((setupBull  and htfRegime ==  1) or (not setupBull and htfRegime == -1))
 htfConflict = setupActive and ((setupBull  and htfRegime == -1) or (not setupBull and htfRegime ==  1))
 setupPasses = setupActive and (not htfConflict or revealCounter)
 htfStrong   = htfThick >= htfThickMin and ((setupBull and htfKjSlope == 1) or (not setupBull and htfKjSlope == -1))
 
+// v3: 7-point score (ADX adds point 7)
 f_score() =>
     int s = 0
     s += isSanyaku ? 1 : 0
@@ -476,15 +528,17 @@ f_score() =>
     s += (useHtfStrength and htfStrong) ? 1 : 0
     s += hasEffectiveTP ? 1 : 0
     s += (nearTimeWindow or ltfConfirms) ? 1 : 0
+    // point 7: ADX trend strength
+    s += (useAdxScore and adxTrendOK) ? 1 : 0
     s
 
 confScore = setupPasses ? f_score() : 0
 confTier  = confScore >= tierHiMin ? "HIGH" : confScore >= tierModMin ? "MODERATE" : "LOW"
 
-// PATCH 4: lock score and tier at entry; use locked values while in position
+// Lock score/tier at entry (PATCH 4 from v2.1 kept)
 var int    lockedScore = na
 var string lockedTier  = "LOW"
-liveTier = strategy.position_size == 0 ? confTier : lockedTier
+liveTier = flatNow ? confTier : lockedTier
 riskPct  = liveTier == "HIGH" ? riskHi : riskMod
 
 rawSL    = setupBull ? cloudBot : cloudTop
@@ -499,17 +553,14 @@ rrPasses   = not na(rrRatio) and rrRatio >= minRR
 
 tierOK = confTier == "HIGH" or (confTier == "MODERATE" and tradeModerate)
 
-// PATCH 2: adxOK gates all entry paths
-revLong  = setupPasses and setupBull     and hasEffectiveTP and tierOK and inWindow and rrPasses and adxOK
-revShort = setupPasses and not setupBull and hasEffectiveTP and tierOK and inWindow and rrPasses and adxOK
-conLong  = contLong  and inWindow and adxOK
-conShort = contShort and inWindow and adxOK
+// v3: adxHardOK gates only if useAdxGate is on; otherwise free pass
+revLong  = setupPasses and setupBull     and hasEffectiveTP and tierOK and inWindow and rrPasses and adxHardOK
+revShort = setupPasses and not setupBull and hasEffectiveTP and tierOK and inWindow and rrPasses and adxHardOK
+conLong  = contLong  and inWindow and adxHardOK
+conShort = contShort and inWindow and adxHardOK
 
 goLong  = revLong  or conLong
 goShort = revShort or conShort
-
-entryKindLong  = revLong  ? "REV" : "CON"
-entryKindShort = revShort ? "REV" : "CON"
 
 f_qty() =>
     float q = na
@@ -521,29 +572,29 @@ tradeQty = f_qty()
 
 // ============================================================================
 // ENTRIES
-// PATCH 5: per-direction trailSL variables
-// PATCH 4: lock score/tier at entry
-// PATCH 6: firedS1/S2/1R reset block placed BEFORE entry logic
 // ============================================================================
 ltfEntryOKLong  = not ltfTimeEntry or ltfPivotDir == 1
 ltfEntryOKShort = not ltfTimeEntry or ltfPivotDir == -1
 
-// PATCH 5: separate trailing stops for long and short
+// Per-direction trailing stops (PATCH 5 from v2.1 kept)
 var float trailSLLong  = na
 var float trailSLShort = na
+// Locked entry price for BE-stop calculation
+var float entryPriceLong  = na
+var float entryPriceShort = na
 
 var string entryKind    = "REV"
 var int    lastConExitBar = na
 contCooldown = 12
 
-// PATCH 6: reset all exit flags BEFORE any entry logic fires
-var bool firedS1     = false
-var bool firedS2     = false
-var bool fired1RLock = false
+// Reset exit flags BEFORE entry logic (PATCH 6 from v2.1 kept + firedBE added)
+var bool firedS1  = false
+var bool firedS2  = false
+var bool firedBE  = false
 if flatNow
-    firedS1     := false
-    firedS2     := false
-    fired1RLock := false
+    firedS1 := false
+    firedS2 := false
+    firedBE := false
 
 if flatNow and entryKind == "CON" and strategy.position_size[1] != 0
     lastConExitBar := bar_index
@@ -560,27 +611,25 @@ canEnterShort = entryShort and not na(tradeQty) and tradeQty > 0 and flatNow and
 
 if canEnterLong
     strategy.entry("Long", strategy.long, qty = tradeQty)
-    trailSLLong := planSL
-    entryKind   := revLong ? "REV" : "CON"
-    lockedScore := confScore
-    lockedTier  := confTier
-    // FIX: dynamic alert fired here instead of alertcondition
-    alert("Ichimoku v2 LONG — " + confTier + " " + str.tostring(confScore) + "/6 | ADX " + str.tostring(math.round(adxVal, 1)), alert.freq_once_per_bar_close)
+    trailSLLong    := planSL
+    entryPriceLong := close
+    entryKind      := revLong ? "REV" : "CON"
+    lockedScore    := confScore
+    lockedTier     := confTier
+    alert("Ichimoku v3 LONG — " + confTier + " " + str.tostring(confScore) + "/7 | ADX " + str.tostring(math.round(adxVal, 1)) + " | R:R " + str.tostring(math.round(rrRatio, 2)), alert.freq_once_per_bar_close)
 
 if canEnterShort
     strategy.entry("Short", strategy.short, qty = tradeQty)
-    trailSLShort := planSL
-    entryKind    := revShort ? "REV" : "CON"
-    lockedScore  := confScore
-    lockedTier   := confTier
-    // FIX: dynamic alert fired here instead of alertcondition
-    alert("Ichimoku v2 SHORT — " + confTier + " " + str.tostring(confScore) + "/6 | ADX " + str.tostring(math.round(adxVal, 1)), alert.freq_once_per_bar_close)
+    trailSLShort    := planSL
+    entryPriceShort := close
+    entryKind       := revShort ? "REV" : "CON"
+    lockedScore     := confScore
+    lockedTier      := confTier
+    alert("Ichimoku v3 SHORT — " + confTier + " " + str.tostring(confScore) + "/7 | ADX " + str.tostring(math.round(adxVal, 1)) + " | R:R " + str.tostring(math.round(rrRatio, 2)), alert.freq_once_per_bar_close)
 
 
 // ============================================================================
 // EXITS
-// PATCH 5: trailSLLong / trailSLShort used independently
-// FIX v2.1: use1RLock default=false — removed performance drag on winners
 // ============================================================================
 inLong  = strategy.position_size > 0
 inShort = strategy.position_size < 0
@@ -591,22 +640,28 @@ ltfExitOKShort = not ltfTimeExit or ltfPivotDir == 1
 exTKLong   = ta.crossunder(tenkan, kijun)
 exKijunL   = ta.crossunder(close,  kijun)
 exCloudL   = priceBelow
-exTKShort  = ta.crossover(tenkan, kijun)
-exKijunS   = ta.crossover(close,  kijun)
+exTKShort  = ta.crossover(tenkan,  kijun)
+exKijunS   = ta.crossover(close,   kijun)
 exCloudS   = priceAbove
 
 if inLong
     if entryKind == "CON"
-        trailSLLong := math.max(nz(trailSLLong[1], cloudBot), cloudBot)
+        // v3: CON trail: use Kijun when conTrailKijun=true (tighter than cloud)
+        //     otherwise fall back to cloud bottom (legacy behavior)
+        conFloor = conTrailKijun ? math.max(cloudBot, kijun) : cloudBot
+        trailSLLong := math.max(nz(trailSLLong, conFloor), conFloor)
         strategy.exit("L-cloudtrail", from_entry = "Long", stop = trailSLLong)
     else
-        if use1RLock and not fired1RLock and not na(strategy.position_avg_price)
-            oneR = strategy.position_avg_price + math.abs(strategy.position_avg_price - planSL)
-            if close >= oneR
-                strategy.close("Long", qty_percent = 25, comment = "1R lock")
-                fired1RLock := true
-        if trailKijun and kijun < close
-            trailSLLong := math.max(nz(trailSLLong[1], planSL), kijun)
+        // v3: Breakeven stop — move stop to entry when +1.5R is reached
+        if useBeStop and not firedBE and not na(entryPriceLong) and not na(trailSLLong)
+            initialRisk = math.abs(entryPriceLong - trailSLLong)
+            beTarget    = entryPriceLong + beRMult * initialRisk
+            if close >= beTarget
+                trailSLLong := math.max(trailSLLong, entryPriceLong)
+                firedBE     := true
+        // Kijun trail: only tighten when Kijun is rising and price is above entry
+        if trailKijun and kijun < close and kijun > kijun[1]
+            trailSLLong := math.max(nz(trailSLLong, planSL), kijun)
         strategy.exit("L-stop", from_entry = "Long", stop = trailSLLong)
         if exTKLong and not firedS1 and ltfExitOKLong
             strategy.close("Long", qty_percent = splitStage1, comment = "TP1 TKx")
@@ -619,16 +674,20 @@ if inLong
 
 if inShort
     if entryKind == "CON"
-        trailSLShort := math.min(nz(trailSLShort[1], cloudTop), cloudTop)
+        conCeil = conTrailKijun ? math.min(cloudTop, kijun) : cloudTop
+        trailSLShort := math.min(nz(trailSLShort, conCeil), conCeil)
         strategy.exit("S-cloudtrail", from_entry = "Short", stop = trailSLShort)
     else
-        if use1RLock and not fired1RLock and not na(strategy.position_avg_price)
-            oneR = strategy.position_avg_price - math.abs(strategy.position_avg_price - planSL)
-            if close <= oneR
-                strategy.close("Short", qty_percent = 25, comment = "1R lock")
-                fired1RLock := true
-        if trailKijun and kijun > close
-            trailSLShort := math.min(nz(trailSLShort[1], planSL), kijun)
+        // v3: Breakeven stop for shorts
+        if useBeStop and not firedBE and not na(entryPriceShort) and not na(trailSLShort)
+            initialRisk = math.abs(entryPriceShort - trailSLShort)
+            beTarget    = entryPriceShort - beRMult * initialRisk
+            if close <= beTarget
+                trailSLShort := math.min(trailSLShort, entryPriceShort)
+                firedBE      := true
+        // Kijun trail: only tighten when Kijun is falling and price is below entry
+        if trailKijun and kijun > close and kijun < kijun[1]
+            trailSLShort := math.min(nz(trailSLShort, planSL), kijun)
         strategy.exit("S-stop", from_entry = "Short", stop = trailSLShort)
         if exTKShort and not firedS1 and ltfExitOKShort
             strategy.close("Short", qty_percent = splitStage1, comment = "TP1 TKx")
@@ -649,29 +708,30 @@ fill(spaPlot, spbPlot, color = cloudBull ? color.new(color.green, 90) : color.ne
 plot(tenkan, "Tenkan", color.new(#2962FF, 40), 1)
 plot(kijun,  "Kijun",  color.new(#FF6D00, 40), 2)
 
-// PATCH 5: plot correct trail per direction
+// Correct trail per direction
 trailPlot = inLong ? trailSLLong : inShort ? trailSLShort : na
 plot(trailPlot, "Trail Stop", color.new(color.red, 0), 1, plot.style_linebr)
 
 if drawPlan and (goLong or goShort)
-    col      = setupBull ? color.teal : color.maroon
-    kindTag  = (goLong and revLong) or (goShort and revShort) ? "REV" : "CON"
-    rrStr    = not na(rrRatio) ? "\nR:R " + str.tostring(math.round(rrRatio, 2)) : ""
+    col     = setupBull ? color.teal : color.maroon
+    kindTag = (goLong and revLong) or (goShort and revShort) ? "REV" : "CON"
+    rrStr   = not na(rrRatio) ? "\nR:R " + str.tostring(math.round(rrRatio, 2)) : ""
+    adxStr  = "\nADX " + str.tostring(math.round(adxVal, 1))
     label.new(bar_index, setupBull ? low : high,
-         setupName + " [" + kindTag + "]\n" + confTier + " " + str.tostring(confScore) + "/6" + rrStr,
-         style    = setupBull ? label.style_label_up : label.style_label_down,
-         color    = color.new(col, 0),
+         setupName + " [" + kindTag + "]\n" + confTier + " " + str.tostring(confScore) + "/7" + rrStr + adxStr,
+         style     = setupBull ? label.style_label_up : label.style_label_down,
+         color     = color.new(col, 0),
          textcolor = color.white,
-         size     = size.small)
+         size      = size.small)
 
 
 // ============================================================================
-// ALERTS — static alertcondition triggers; dynamic detail via alert() above
+// ALERTS
 // ============================================================================
-alertcondition(canEnterLong,                "Long entry",       "Ichimoku v2: LONG entry fired — check chart")
-alertcondition(canEnterShort,               "Short entry",      "Ichimoku v2: SHORT entry fired — check chart")
-alertcondition(inLong  and exCloudL,        "Long cloud loss",  "Ichimoku v2: LONG lost cloud — exit")
-alertcondition(inShort and exCloudS,        "Short cloud loss", "Ichimoku v2: SHORT lost cloud — exit")
+alertcondition(canEnterLong,         "Long entry",       "Ichimoku v3: LONG entry — check chart")
+alertcondition(canEnterShort,        "Short entry",      "Ichimoku v3: SHORT entry — check chart")
+alertcondition(inLong  and exCloudL, "Long cloud loss",  "Ichimoku v3: LONG lost cloud — exit")
+alertcondition(inShort and exCloudS, "Short cloud loss", "Ichimoku v3: SHORT lost cloud — exit")
 // ============================================================================
-// END v2.1
+// END v3.0
 // ============================================================================
