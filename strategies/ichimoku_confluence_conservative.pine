@@ -28,6 +28,10 @@
 //     the cloud from below). Locks in profit on shorts faster when BTC bounces
 //     into the Kumo rather than waiting for a full cloud breakout.
 //
+// OPTION 1 PATCH: enableAllShorts master toggle (default false)
+//   - Disables ALL short entries (reversal + continuation)
+//   - Set enableAllShorts = true to re-enable shorts
+//
 // All v3.1 fixes (FIX #1–#11) are preserved unchanged.
 // ============================================================================
 
@@ -127,6 +131,8 @@ beRMult       = input.float(1.5,  "Breakeven trigger (R multiple)", minval = 0.5
 trailKijun    = input.bool(true,  "Trail stop along Kijun",        group = grpO)
 conTrailKijun = input.bool(true,  "CON trades: trail Kijun (else cloud)", group = grpO)
 enableContShort = input.bool(false, "Enable continuation shorts", group = grpO)
+// OPTION 1 PATCH: master toggle — set false to disable ALL shorts (rev + con)
+enableAllShorts = input.bool(false, "Enable ALL shorts (rev + con)", group = grpO)
 drawPlan      = input.bool(true,  "Draw plan on chart",            group = grpO)
 
 grpD = "Backtest Window"
@@ -553,10 +559,11 @@ rrPasses   = not na(rrRatio) and rrRatio >= minRR
 tierOK = confTier == "HIGH" or (confTier == "MODERATE" and tradeModerate)
 
 // v3.2: SHORT #3 — shortSmaGateOK applied to revShort and conShort
+// OPTION 1 PATCH: enableAllShorts gates both revShort and conShort
 revLong  = setupPasses and setupBull     and hasEffectiveTP and tierOK and inWindow and rrPasses and adxHardOK
-revShort = setupPasses and not setupBull and hasEffectiveTP and tierOK and inWindow and rrPasses and adxHardOK and shortSmaGateOK
+revShort = enableAllShorts and setupPasses and not setupBull and hasEffectiveTP and tierOK and inWindow and rrPasses and adxHardOK and shortSmaGateOK
 conLong  = contLong  and inWindow and adxHardOK
-conShort = contShort and inWindow and adxHardOK and shortSmaGateOK
+conShort = enableAllShorts and contShort and inWindow and adxHardOK and shortSmaGateOK
 
 goLong  = revLong  or conLong
 goShort = revShort or conShort
@@ -661,7 +668,6 @@ exCloudL   = priceBelow
 exTKShort  = ta.crossover(tenkan,  kijun)
 exKijunS   = ta.crossover(close,   kijun)
 // v3.2: SHORT #4 — exit short when price enters the cloud from below (close >= cloudBot)
-// Previously: exCloudS = priceAbove (close > cloudTop)
 exCloudS   = close >= cloudBot
 
 if inLong
@@ -748,5 +754,5 @@ alertcondition(canEnterShort,        "Short entry",      "Ichimoku v3.2: SHORT e
 alertcondition(inLong  and exCloudL, "Long cloud loss",  "Ichimoku v3.2: LONG lost cloud — exit")
 alertcondition(inShort and exCloudS, "Short Kumo entry", "Ichimoku v3.2: SHORT price entered Kumo — exit")
 // ============================================================================
-// END v3.2
+// END v3.2 — OPTION 1 PATCH: enableAllShorts = false (shorts disabled)
 // ============================================================================
