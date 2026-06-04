@@ -12,6 +12,7 @@
 //   7. +1R partial lock-in 25% for REV trades
 //   8. contLong requires flatNow (no phantom mid-trade signals)
 //   9. f_tkQuality tidied to explicit if/else chain
+// FIX (CE10005): all semicolon-chained assignments split to individual lines
 // ============================================================================
 strategy("Ichimoku Confluence Strategy [Conservative] v2",
      overlay              = true,
@@ -298,27 +299,53 @@ contShort = false   // disabled — confirmed net loser across 4 markets
 
 // ============================================================================
 // A-B-C SWING + V/N/E TARGETS
-// (renamed swA/swB/swC to avoid shadowing Pine built-ins)
+// FIX CE10005: each assignment on its own line (no semicolon chaining)
 // ============================================================================
 ph = ta.pivothigh(swingLen, swingLen)
 pl = ta.pivotlow(swingLen,  swingLen)
-var float swP0 = na, var float swP1 = na, var float swP2 = na
-var bool  swT0 = false, var bool swT1 = false, var bool swT2 = false
-var int   swB0 = na,    var int  swB1 = na,    var int  swB2 = na
+
+var float swP0 = na
+var float swP1 = na
+var float swP2 = na
+var bool  swT0 = false
+var bool  swT1 = false
+var bool  swT2 = false
+var int   swB0 = na
+var int   swB1 = na
+var int   swB2 = na
 
 if not na(ph)
-    swP0 := swP1; swP1 := swP2; swP2 := ph
-    swT0 := swT1; swT1 := swT2; swT2 := true
-    swB0 := swB1; swB1 := swB2; swB2 := bar_index - swingLen
+    swP0 := swP1
+    swP1 := swP2
+    swP2 := ph
+    swT0 := swT1
+    swT1 := swT2
+    swT2 := true
+    swB0 := swB1
+    swB1 := swB2
+    swB2 := bar_index - swingLen
+
 if not na(pl)
-    swP0 := swP1; swP1 := swP2; swP2 := pl
-    swT0 := swT1; swT1 := swT2; swT2 := false
-    swB0 := swB1; swB1 := swB2; swB2 := bar_index - swingLen
+    swP0 := swP1
+    swP1 := swP2
+    swP2 := pl
+    swT0 := swT1
+    swT1 := swT2
+    swT2 := false
+    swB0 := swB1
+    swB1 := swB2
+    swB2 := bar_index - swingLen
 
 abcValid = not na(swP0) and not na(swP1) and not na(swP2) and (swT0 != swT1) and (swT1 != swT2)
 abcBull  = abcValid and not swT2
-swA = swP0; swB_val = swP1; swC = swP2
-swAbar = swB0; swBbar = swB1; swCbar = swB2
+
+// FIX CE10005: aliases on separate lines
+swA    = swP0
+swB_val = swP1
+swC    = swP2
+swAbar = swB0
+swBbar = swB1
+swCbar = swB2
 
 f_targets(isBull) =>
     vT = na(swB_val) or na(swC)                  ? na : isBull ? swB_val + (swB_val - swC) : swB_val - (swB_val - swC)
@@ -370,9 +397,12 @@ f_primaryTP() =>
     float primDist = na
     cands = array.new_float()
     flags = array.new_bool()
-    array.push(cands, tgtV); array.push(flags, convV)
-    array.push(cands, tgtN); array.push(flags, convN)
-    array.push(cands, tgtE); array.push(flags, convE)
+    array.push(cands, tgtV)
+    array.push(flags, convV)
+    array.push(cands, tgtN)
+    array.push(flags, convN)
+    array.push(cands, tgtE)
+    array.push(flags, convE)
     for i = 0 to 2
         tt = array.get(cands, i)
         if array.get(flags, i) and not na(tt)
@@ -508,8 +538,8 @@ contCooldown = 12
 
 // PATCH 6: reset all exit flags BEFORE any entry logic fires
 // This ensures a same-bar flat → re-entry does not inherit stale flags
-var bool firedS1    = false
-var bool firedS2    = false
+var bool firedS1     = false
+var bool firedS2     = false
 var bool fired1RLock = false  // PATCH 7
 if flatNow
     firedS1     := false
