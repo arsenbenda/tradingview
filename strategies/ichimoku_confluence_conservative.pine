@@ -2,8 +2,7 @@
 // ============================================================================
 // ICHIMOKU CONFLUENCE STRATEGY [Conservative] — v2.0
 // ============================================================================
-// PATCHES APPLIED (vs original):
-//   1. HTF/LTF timeframe string builder — correct H/D/W/M suffixes
+// PATCHES APPLIED (vs original):\n//   1. HTF/LTF timeframe string builder — correct H/D/W/M suffixes
 //   2. ADX regime filter — skip low-trend chop (default 20, toggleable)
 //   3. ATR fallback TP — R:R gate survives when no ABC target is available
 //   4. Score/tier locked at entry (lockedScore, lockedTier)
@@ -13,6 +12,7 @@
 //   8. contLong requires flatNow (no phantom mid-trade signals)
 //   9. f_tkQuality tidied to explicit if/else chain
 // FIX (CE10005): all semicolon-chained assignments split to individual lines
+// FIX (alertcondition): dynamic strings moved to alert() inside entry blocks
 // ============================================================================
 strategy("Ichimoku Confluence Strategy [Conservative] v2",
      overlay              = true,
@@ -131,8 +131,6 @@ adxOK = not useAdxFilter or adxVal >= adxMin
 
 // ============================================================================
 // PATCH 1: TIMEFRAME BUILDER — FIXED
-// Original bugs: sub-1h branch produced no unit suffix; 1h-24h branch
-// divided by 60 instead of 3600, generating wrong TF strings.
 // ============================================================================
 f_tfMul(mult) =>
     secs = timeframe.in_seconds(timeframe.period) * mult
@@ -184,7 +182,7 @@ ltfPivotDir = request.security(syminfo.tickerid, ltfTF, f_ltfPivotDir(), lookahe
 
 // ============================================================================
 // TK QUALITY + 3-LINE BREAK
-// PATCH 9: f_tkQuality rewritten as explicit if/else chain (cleaner, debuggable)
+// PATCH 9: f_tkQuality rewritten as explicit if/else chain
 // ============================================================================
 tkUp   = ta.crossover(tenkan, kijun)
 tkDown = ta.crossunder(tenkan, kijun)
@@ -258,7 +256,6 @@ if sanyakuFired
     sState  := 0
     sAnchor := na
 else if tkUp or tkDown
-    // TK-cross setups carry no Sanyaku tightness — reset explicitly
     setupOriginBar := bar_index
     setupTightness  := na
 
@@ -280,8 +277,7 @@ string setupName   = setupType == 1 ? "SANYAKU KOUTEN"   :
 
 // ============================================================================
 // CONTINUATION (LONG ONLY)
-// PATCH 8: flatNow guard added directly to contLong definition so no
-// phantom signals or alerts fire while already in a position.
+// PATCH 8: flatNow guard added directly to contLong definition
 // ============================================================================
 bullCloudNow  = senkouA[disp] > senkouB[disp]
 kijunRising   = kijun > kijun[1]
@@ -294,12 +290,12 @@ flatNow        = strategy.position_size == 0
 // PATCH 8 applied: flatNow is first condition
 contLong  = flatNow and bullCloudNow and priceAbove and htfRegime == 1 and
              kijunRising and cloudThickOK and pulledBackLong and resumeLong
-contShort = false   // disabled — confirmed net loser across 4 markets
+contShort = false
 
 
 // ============================================================================
 // A-B-C SWING + V/N/E TARGETS
-// FIX CE10005: each assignment on its own line (no semicolon chaining)
+// FIX CE10005: each assignment on its own line
 // ============================================================================
 ph = ta.pivothigh(swingLen, swingLen)
 pl = ta.pivotlow(swingLen,  swingLen)
@@ -474,7 +470,7 @@ f_score() =>
     s += (isSanyaku and not na(setupTightness) and f_tightGrade(setupTightness) != "LOOSE") ? 1 : 0
     s += htfAligned ? 1 : 0
     s += (useHtfStrength and htfStrong) ? 1 : 0
-    s += hasEffectiveTP ? 1 : 0  // PATCH 3: uses effectiveTP (includes fallback)
+    s += hasEffectiveTP ? 1 : 0
     s += (nearTimeWindow or ltfConfirms) ? 1 : 0
     s
 
@@ -537,10 +533,9 @@ var int    lastConExitBar = na
 contCooldown = 12
 
 // PATCH 6: reset all exit flags BEFORE any entry logic fires
-// This ensures a same-bar flat → re-entry does not inherit stale flags
 var bool firedS1     = false
 var bool firedS2     = false
-var bool fired1RLock = false  // PATCH 7
+var bool fired1RLock = false
 if flatNow
     firedS1     := false
     firedS2     := false
@@ -563,15 +558,19 @@ if canEnterLong
     strategy.entry("Long", strategy.long, qty = tradeQty)
     trailSLLong := planSL
     entryKind   := revLong ? "REV" : "CON"
-    lockedScore := confScore   // PATCH 4
-    lockedTier  := confTier    // PATCH 4
+    lockedScore := confScore
+    lockedTier  := confTier
+    // FIX: dynamic alert fired here instead of alertcondition
+    alert("Ichimoku v2 LONG — " + confTier + " " + str.tostring(confScore) + "/6 | ADX " + str.tostring(math.round(adxVal, 1)), alert.freq_once_per_bar_close)
 
 if canEnterShort
     strategy.entry("Short", strategy.short, qty = tradeQty)
     trailSLShort := planSL
     entryKind    := revShort ? "REV" : "CON"
-    lockedScore  := confScore  // PATCH 4
-    lockedTier   := confTier   // PATCH 4
+    lockedScore  := confScore
+    lockedTier   := confTier
+    // FIX: dynamic alert fired here instead of alertcondition
+    alert("Ichimoku v2 SHORT — " + confTier + " " + str.tostring(confScore) + "/6 | ADX " + str.tostring(math.round(adxVal, 1)), alert.freq_once_per_bar_close)
 
 
 // ============================================================================
@@ -594,17 +593,14 @@ exCloudS   = priceAbove
 
 if inLong
     if entryKind == "CON"
-        // Continuation: trail cloud bottom, exit when price tags it
         trailSLLong := math.max(nz(trailSLLong[1], cloudBot), cloudBot)
         strategy.exit("L-cloudtrail", from_entry = "Long", stop = trailSLLong)
     else
-        // PATCH 7: lock in 25% at +1R before staged exits run
         if use1RLock and not fired1RLock and not na(strategy.position_avg_price)
             oneR = strategy.position_avg_price + math.abs(strategy.position_avg_price - planSL)
             if close >= oneR
                 strategy.close("Long", qty_percent = 25, comment = "1R lock")
                 fired1RLock := true
-        // PATCH 5: ratchet trail along Kijun (long side only)
         if trailKijun and kijun < close
             trailSLLong := math.max(nz(trailSLLong[1], planSL), kijun)
         strategy.exit("L-stop", from_entry = "Long", stop = trailSLLong)
@@ -619,17 +615,14 @@ if inLong
 
 if inShort
     if entryKind == "CON"
-        // Continuation: trail cloud top, exit when price tags it
         trailSLShort := math.min(nz(trailSLShort[1], cloudTop), cloudTop)
         strategy.exit("S-cloudtrail", from_entry = "Short", stop = trailSLShort)
     else
-        // PATCH 7: lock in 25% at +1R (short side — price moves down)
         if use1RLock and not fired1RLock and not na(strategy.position_avg_price)
             oneR = strategy.position_avg_price - math.abs(strategy.position_avg_price - planSL)
             if close <= oneR
                 strategy.close("Short", qty_percent = 25, comment = "1R lock")
                 fired1RLock := true
-        // PATCH 5: ratchet trail along Kijun (short side only)
         if trailKijun and kijun > close
             trailSLShort := math.min(nz(trailSLShort[1], planSL), kijun)
         strategy.exit("S-stop", from_entry = "Short", stop = trailSLShort)
@@ -644,7 +637,7 @@ if inShort
 
 
 // ============================================================================
-// DRAWING + ALERTS
+// DRAWING
 // ============================================================================
 spaPlot = plot(senkouA, "SpanA", color.new(color.green, 92), offset = disp)
 spbPlot = plot(senkouB, "SpanB", color.new(color.red,   92), offset = disp)
@@ -667,11 +660,14 @@ if drawPlan and (goLong or goShort)
          textcolor = color.white,
          size     = size.small)
 
-// Alerts — include score, tier, and ADX in message
-alertcondition(goLong,  "Long entry",  "Ichimoku v2 LONG  — " + confTier + " " + str.tostring(confScore) + "/6 | ADX " + str.tostring(math.round(adxVal, 1)))
-alertcondition(goShort, "Short entry", "Ichimoku v2 SHORT — " + confTier + " " + str.tostring(confScore) + "/6 | ADX " + str.tostring(math.round(adxVal, 1)))
-alertcondition(inLong  and exCloudL,  "Long cloud loss",  "Ichimoku v2: LONG  lost cloud — exit")
-alertcondition(inShort and exCloudS,  "Short cloud loss", "Ichimoku v2: SHORT lost cloud — exit")
+
+// ============================================================================
+// ALERTS — static alertcondition triggers; dynamic detail via alert() above
+// ============================================================================
+alertcondition(canEnterLong,                "Long entry",       "Ichimoku v2: LONG entry fired — check chart")
+alertcondition(canEnterShort,               "Short entry",      "Ichimoku v2: SHORT entry fired — check chart")
+alertcondition(inLong  and exCloudL,        "Long cloud loss",  "Ichimoku v2: LONG lost cloud — exit")
+alertcondition(inShort and exCloudS,        "Short cloud loss", "Ichimoku v2: SHORT lost cloud — exit")
 // ============================================================================
 // END v2.0
 // ============================================================================
