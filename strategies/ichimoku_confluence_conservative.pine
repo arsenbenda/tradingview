@@ -1,6 +1,6 @@
 //@version=6
 // ============================================================================
-// ICHIMOKU CONFLUENCE STRATEGY [Conservative] — v2.0
+// ICHIMOKU CONFLUENCE STRATEGY [Conservative] — v2.1
 // ============================================================================
 // PATCHES APPLIED (vs original):\n//   1. HTF/LTF timeframe string builder — correct H/D/W/M suffixes
 //   2. ADX regime filter — skip low-trend chop (default 20, toggleable)
@@ -8,11 +8,14 @@
 //   4. Score/tier locked at entry (lockedScore, lockedTier)
 //   5. Per-direction trailing stops (trailSLLong / trailSLShort)
 //   6. firedS1/firedS2 reset before entry logic (same-bar re-entry safe)
-//   7. +1R partial lock-in 25% for REV trades
+//   7. +1R partial lock-in 25% for REV trades — DEFAULT OFF (kills big wins)
 //   8. contLong requires flatNow (no phantom mid-trade signals)
 //   9. f_tkQuality tidied to explicit if/else chain
 // FIX (CE10005): all semicolon-chained assignments split to individual lines
 // FIX (alertcondition): dynamic strings moved to alert() inside entry blocks
+// FIX (v2.1): use1RLock default=false — was cutting winners prematurely
+// FIX (v2.1): f_tfMul hours branch now outputs minutes ("360" not "6H")
+// FIX (v2.1): riskMod default confirmed at 1.0% (MODERATE <= HIGH always)
 // ============================================================================
 strategy("Ichimoku Confluence Strategy [Conservative] v2",
      overlay              = true,
@@ -65,6 +68,7 @@ revealCounter = input.bool(true,  "Trade counter-trend (else HTF-gated out)", gr
 tierHiMin     = input.int(4,      "HIGH tier: min score",    minval = 1, maxval = 6, group = grpH)
 tierModMin    = input.int(2,      "MODERATE tier: min score",minval = 1, maxval = 6, group = grpH)
 riskHi        = input.float(1.7,  "Risk % on HIGH tier",     minval = 0.1, step = 0.1, group = grpH)
+// FIX v2.1: riskMod must be <= riskHi; MODERATE trades are lower quality
 riskMod       = input.float(1.0,  "Risk % on MODERATE tier", minval = 0.1, step = 0.1, group = grpH)
 tradeModerate = input.bool(true,  "Trade MODERATE tier (else HIGH only)", group = grpH)
 
@@ -92,8 +96,8 @@ ltfTimeExit  = input.bool(false, "Use LTF to time EXIT partials", group = grpLTF
 grpO = "Orders & Exits"
 splitStage1 = input.int(25, "Stage 1 exit % (opposing TK cross)", minval = 0, maxval = 50, group = grpO)
 splitStage2 = input.int(25, "Stage 2 exit % (Kijun cross)",       minval = 0, maxval = 50, group = grpO)
-// PATCH 7: +1R partial lock-in for REV trades
-use1RLock   = input.bool(true, "Lock 25% at +1R (REV trades only)", group = grpO)
+// FIX v2.1: default OFF — 1R partial was cutting the biggest winning trades
+use1RLock   = input.bool(false, "Lock 25% at +1R (REV trades only)", group = grpO)
 trailKijun  = input.bool(true, "Trail stop along Kijun",            group = grpO)
 drawPlan    = input.bool(true, "Draw plan on chart",                group = grpO)
 
@@ -131,20 +135,20 @@ adxOK = not useAdxFilter or adxVal >= adxMin
 
 // ============================================================================
 // PATCH 1: TIMEFRAME BUILDER — FIXED
+// FIX v2.1: hours branch outputs minutes (e.g. "360") not "6H"
+//           TradingView security() does not accept "H" suffix for sub-daily
 // ============================================================================
 f_tfMul(mult) =>
     secs = timeframe.in_seconds(timeframe.period) * mult
     secs < 60       ? "1" :
-     secs < 3600    ? str.tostring(math.round(secs / 60)) :
-     secs < 86400   ? str.tostring(math.round(secs / 3600))  + "H" :
+     secs < 86400   ? str.tostring(math.round(secs / 60)) :
      secs < 604800  ? str.tostring(math.round(secs / 86400)) + "D" :
      secs < 2592000 ? str.tostring(math.round(secs / 604800)) + "W" :
      str.tostring(math.round(secs / 2592000)) + "M"
 
 f_tfDiv(divr) =>
     secs = math.max(60, timeframe.in_seconds(timeframe.period) / divr)
-    secs < 3600  ? str.tostring(math.round(secs / 60)) :
-     secs < 86400 ? str.tostring(math.round(secs / 60)) :   // ← minutes, no "H"
+    secs < 86400 ? str.tostring(math.round(secs / 60)) :
      str.tostring(math.round(secs / 86400)) + "D"
 
 htfTF = autoTF ? f_tfMul(htfMult) : htfManual
@@ -576,7 +580,7 @@ if canEnterShort
 // ============================================================================
 // EXITS
 // PATCH 5: trailSLLong / trailSLShort used independently
-// PATCH 7: +1R partial lock-in for REV trades
+// FIX v2.1: use1RLock default=false — removed performance drag on winners
 // ============================================================================
 inLong  = strategy.position_size > 0
 inShort = strategy.position_size < 0
@@ -669,5 +673,5 @@ alertcondition(canEnterShort,               "Short entry",      "Ichimoku v2: SH
 alertcondition(inLong  and exCloudL,        "Long cloud loss",  "Ichimoku v2: LONG lost cloud — exit")
 alertcondition(inShort and exCloudS,        "Short cloud loss", "Ichimoku v2: SHORT lost cloud — exit")
 // ============================================================================
-// END v2.0
+// END v2.1
 // ============================================================================
