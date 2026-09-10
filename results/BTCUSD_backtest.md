@@ -1,5 +1,7 @@
 # Trend Rebalance Map [Herman] — BTC/USD backtest
 
+📉 **[Visual report](https://claude.ai/code/artifact/2b6a6902-5cd1-4d39-86e9-530eeb6236ec)** — charts, the full walk-forward scatter and the fragility screen.
+
 **Verdict: it does not work on BTC/USD.** Not with the published settings, and not
 with any of the 990 adapted settings tested. The published defaults lose the entire
 account on intraday timeframes; the adapted versions that look profitable in one
