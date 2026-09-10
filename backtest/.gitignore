@@ -1,0 +1,3 @@
+# resampled OHLCV bars, rebuilt by data_prep.py from the upstream 1-minute source
+data/
+__pycache__/

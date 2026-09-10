@@ -1,0 +1,2 @@
+label,timeframe,start,end,years,trades,wins,losses,win_rate,profit_factor,net_profit,net_profit_pct,cagr_pct,max_dd_pct,sharpe,avg_trade_pct,avg_win_pct,avg_loss_pct,tp_exits,sl_exits,long_trades,long_wr,long_pnl,short_trades,short_wr,short_pnl,exposure_pct,avg_bars_held
+"100% of equity per trade, compounding",1d,2017-01-01,2026-09-10,9.69,82,5,77,6.1,1.453,36635.19,36.64,3.27,-28.52,0.34,0.5025,19.602,-0.738,5,77,39,10.3,73839.34,43,2.3,-37204.15,6.98,3.0
