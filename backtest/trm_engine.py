@@ -57,13 +57,16 @@ class Params:
     min_separation: float = 30.0          # in "points" (sep_mode="points")
     sep_mode: str = "points"              # "points" | "percent"
     min_separation_pct: float = 1.0       # |fast-slow| / close * 100
+    max_separation_pct: float = 0.0       # 0 = off; stand down above this (a trend)
+    max_bars: int = 0                     # 0 = off; give up after this many bars
 
     # --- direction (Pine: G_DIR) ---
     enable_longs: bool = True
     enable_shorts: bool = True
 
     # --- take profit (Pine: G_TP) ---
-    tp_mode: str = "200 SMA"              # "200 SMA" | "Fixed Points"
+    tp_mode: str = "200 SMA"              # "200 SMA" | "Fixed Points" | "Retrace"
+    retrace_frac: float = 1.0             # "Retrace": share of the way to the SMA200
     sma_target_behaviour: str = "Dynamic"  # "Dynamic" | "Locked at Entry"
     tp_fixed_points: float = 100.0
 
@@ -147,7 +150,10 @@ def run(df: pd.DataFrame, p: Params, timeframe: str = "",
     cross_dn = (c < fast) & (prev_c >= prev_f)
 
     if p.sep_mode == "percent":
-        sep_ok = (np.abs(fast - slow) / c * 100.0) > p.min_separation_pct
+        sep_pct = np.abs(fast - slow) / c * 100.0
+        sep_ok = sep_pct > p.min_separation_pct
+        if p.max_separation_pct > 0:
+            sep_ok = sep_ok & (sep_pct < p.max_separation_pct)
     else:
         sep_ok = (np.abs(fast - slow) / p.point_size) > p.min_separation
 
@@ -251,6 +257,10 @@ def run(df: pd.DataFrame, p: Params, timeframe: str = "",
                 ref = ci + slip * side                   # slipped market fill
                 if p.tp_mode == "200 SMA":
                     init_tp = SLOW[i]
+                elif p.tp_mode == "Retrace":
+                    # only part of the way back to the slow average: the full
+                    # trip is a 4:1..35:1 demand on BTC, which no win rate covers
+                    init_tp = ref + p.retrace_frac * (SLOW[i] - ref)
                 else:
                     init_tp = ref + side * p.tp_fixed_points * p.point_size
                 dist = abs(init_tp - ref)
@@ -275,12 +285,35 @@ def run(df: pd.DataFrame, p: Params, timeframe: str = "",
                     stop_lvl = sl
                     tp_lvl = init_tp
 
+        # ---------- 2b. time stop at the close ----------
+        if pos != 0 and p.max_bars > 0 and (i - entry_bar) >= p.max_bars:
+            fill_px = ci - slip * pos
+            gross = (fill_px - entry_px) * qty * pos
+            pnl = gross - _fees(p, qty, entry_px, fill_px)
+            equity += pnl
+            trades.append(Trade(
+                side=pos, entry_bar=entry_bar, exit_bar=i,
+                entry_time=idx[entry_bar], exit_time=idx[i],
+                entry_px=entry_px, exit_px=fill_px, qty=qty,
+                stop_px=stop_lvl, tp_px_at_entry=tp_locked, reason="TIME",
+                pnl=pnl, pnl_pct=pnl / (entry_px * qty) if qty else 0.0,
+                bars_held=i - entry_bar))
+            pos = 0
+            qty = 0.0
+            stop_lvl = math.nan
+            tp_lvl = math.nan
+            last_exit_bar = i
+
         # ---------- 3. re-issue the target for bar i+1 (Dynamic mode) --------
         if pos != 0:
             if p.tp_mode == "200 SMA" and p.sma_target_behaviour == "Dynamic":
                 s = SLOW[i]
                 if not math.isnan(s):
                     tp_lvl = s
+            elif p.tp_mode == "Retrace" and p.sma_target_behaviour == "Dynamic":
+                s = SLOW[i]
+                if not math.isnan(s):
+                    tp_lvl = entry_px + p.retrace_frac * (s - entry_px)
             eq_curve[i] = equity + (ci - entry_px) * qty * pos
         else:
             eq_curve[i] = equity

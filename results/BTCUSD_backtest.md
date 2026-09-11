@@ -209,7 +209,78 @@ that a handful of times.
 
 ---
 
-## 6. Why it fails on BTC specifically
+## 6. Can it be repaired? (the modified version)
+
+Everything above tests the strategy **as published**. This section asks a different
+question: given the three diagnosed failures, can the premise be modified into something
+that clears profit factor 1 and stays there. Three changes, each answering one diagnosis:
+
+| Diagnosis | Change |
+|---|---|
+| Target demands a 4:1–35:1 payoff | **Retrace target** — take a fraction of the way to the SMA200 instead of the whole trip |
+| Separation filter encourages entries in a trend | **Separation cap** — stand down above a threshold |
+| Fixed stop cannot scale | ATR multiple or percent of price |
+
+960 combinations (4 timeframes × 2 directions × 4 retrace fractions × 5 stops × 2
+separation floors × 3 caps), selected on 2017–2021, screened the same way as before.
+
+**33 cleared break-even in-sample with ≥ 40 trades; 8 also cleared 2022–2026; 0 cleared
+2012–2016 as well.**
+
+### The selection actually carried information this time
+
+Across all 960, only **8.3 %** are forward-profitable. Among the 33 in-sample winners,
+**24.2 %** are — roughly 3× the base rate. In the unmodified study that same test showed no
+advantage at all. The separation cap is a real effect on its own: with the cap at 10 %,
+15.4 % of configurations are forward-profitable, against 4.9 % with no cap.
+
+### The best candidate
+
+**Daily · both directions · separation > 0.5 % · target 25 % of the way to the SMA200 ·
+3 % stop**
+
+| Window | Trades | Win rate | Profit factor | Avg trade |
+|---|---|---|---|---|
+| In-sample 2017–2021 | 41 | 43.9 % | **1.64** | +0.99 % |
+| **Forward 2022–2026** | 54 | 59.3 % | **1.45** | +0.52 % |
+| 2017 → today | 95 | 52.6 % | **1.55** | +0.72 % |
+| **Backward 2012–2016** | 37 | 18.9 % | **0.19** | −5.66 % |
+
+What holds up:
+
+* **It is a plateau, not a spike.** 11 of 16 neighbouring daily configurations (retrace
+  0.15–0.5 × stop 2–5 %) clear both windows, degrading smoothly at the edges. The
+  unmodified strategy's best config was a lone spike surrounded by failures.
+* **It survives costs.** PF 1.65 → 1.55 → 1.45 → 1.29 at 0 / 0.05 / 0.10 / 0.20 % per side.
+* **No single trade carries it.** The best trade is 5.3 % of gross profit; PF without it is
+  1.46. Forward profit excluding its best year (2025) is still +9.6 % over 39 trades.
+* **Risk control works.** Worst trade since 2017 is −3.18 % against a 3 % stop, and 0 of 95
+  trades are worse than −5 %.
+* **The short side flips.** In the published version shorts were the disaster (PF 0.14).
+  With a 25 % retrace target, shorts are the *better* half (PF 1.82 vs 1.28 long). A modest
+  target on a bounce works where riding to the SMA200 did not.
+
+What does not:
+
+* **It fails 2012–2016** (PF 0.19) — the window pre-committed to as part of the screen.
+  Three quarters of that damage is 2012 alone: 3 trades, one of them **−66 % on a 3 % stop**,
+  a gap through the stop in a $5 market. But excluding 2012 entirely the window is still a
+  loser (PF 0.48), so this is not only a data-era artifact.
+* **It is the best of 960.** The base-rate test and the plateau argue against pure noise,
+  but selection bias is not eliminated.
+* **It is no longer this strategy.** The entry is the author's; the exit is not.
+* **95 trades in 9.7 years**, 7.9 % of the time in the market. Small sample.
+* Compounding 100 % of equity it returns **+84 %** over the period (CAGR 6.5 %, max DD
+  −17.4 %, Sharpe 0.60) against buy-and-hold's +7,732 %. It is a low-exposure,
+  low-drawdown profile, not a wealth engine.
+
+**Honest verdict:** yes, profit factor above 1 that holds forward is reachable — but by
+changing the exit rule, and it still fails one of the three windows the screen was built
+around. Treat it as a lead worth more work, not a system to trade.
+
+---
+
+## 7. Why it fails on BTC specifically
 
 1. **Every input is in absolute points.** A 125-point stop and a 30-point separation
    filter cannot mean the same thing at $13 and at $126,000. This alone destroys the
@@ -233,7 +304,7 @@ that a handful of times.
 
 ---
 
-## 7. What would make it BTC-viable
+## 8. What would make it BTC-viable
 
 Not a settings change — a change to the premise:
 
@@ -253,7 +324,7 @@ the week is cut on a different day.
 
 ---
 
-## 8. Caveats
+## 9. Caveats
 
 * Bitstamp spot; another venue's feed will move individual trades slightly. Results this
   one-sided are not going to flip on feed choice.
@@ -274,7 +345,9 @@ pip install pandas pyarrow
 git clone --depth 1 https://github.com/ff137/bitstamp-btcusd-minute-data /tmp/btcsrc
 python3 backtest/data_prep.py /tmp/btcsrc backtest/data   # resample 1m -> 5m..1w
 python3 backtest/run_btc.py                               # all five phases -> results/
+python3 backtest/run_btc_improve.py                       # the repair search -> results/
 ```
 
 Outputs: `phase1_pine_defaults.csv`, `phase2_sweep.csv` (1,188 rows), `phase3_*.csv`,
-`phase4_fragility.csv`, `phase5_*` (daily vs weekly), `phase3_trades.csv`.
+`phase4_fragility.csv`, `phase5_*` (daily vs weekly), `phase6_*` (the repair search),
+`phase3_trades.csv`.

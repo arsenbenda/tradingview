@@ -151,9 +151,17 @@ crypto included. It touches two `input.float`s and two expressions, and it needs
 plan-gated API, so it stays inside the constraints you set out in the header.
 
 To be clear about what that would and would not achieve: on this data it makes the script
-*testable* on BTC rather than *profitable* on it. I could not find a durable edge here on
-any timeframe. But it would stop the script from silently misbehaving for anyone who loads
-it on a symbol priced far from ~20,000.
+*testable* on BTC rather than *profitable* on it. As published I could not find a durable
+edge on any timeframe. But it would stop the script from silently misbehaving for anyone
+who loads it on a symbol priced far from ~20,000.
+
+One related finding, in case it is of interest: replacing the full 200 SMA target with a
+**partial retracement** (25 % of the way there) changes the picture materially on BTC — on
+daily bars that clears PF 1.64 in 2017–2021 and 1.45 forward on 2022–2026, with a plateau
+of neighbouring parameters rather than a spike, and it flips the short leg from the worst
+half to the best. It still fails 2012–2016, and it is no longer your exit rule, so I am not
+proposing it as a change — only noting that the target distance, not the entry, looks like
+the binding constraint on this instrument.
 
 ## Caveats
 
