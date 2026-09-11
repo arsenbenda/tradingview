@@ -21,6 +21,8 @@ TFS = {
     "1h": "1h",
     "4h": "4h",
     "1d": "1D",
+    "1w": "W0",
+    "1w-sun": "W6",
 }
 
 
@@ -36,7 +38,20 @@ def load_minutes(src: str) -> pd.DataFrame:
     return df.set_index("dt")[["open", "high", "low", "close", "volume"]]
 
 
+def week_key(index, anchor: int = 0):
+    """Start-of-week timestamp; anchor 0 = Monday, 6 = Sunday."""
+    return index.normalize() - pd.to_timedelta((index.dayofweek - anchor) % 7, unit="D")
+
+
 def resample(m: pd.DataFrame, rule: str) -> pd.DataFrame:
+    if rule.startswith("W"):                       # "W0" Monday .. "W6" Sunday
+        grouper = week_key(m.index, int(rule[1:]))
+        out = m.groupby(grouper).agg(
+            open=("open", "first"), high=("high", "max"), low=("low", "min"),
+            close=("close", "last"), volume=("volume", "sum"))
+        out["live_minutes"] = (m["volume"] > 0).groupby(grouper).sum().astype("int32")
+        out.index.name = "dt"
+        return out.dropna(subset=["open"])
     out = m.resample(rule, label="left", closed="left").agg(
         open=("open", "first"),
         high=("high", "max"),

@@ -15,6 +15,11 @@ p1 = pd.read_csv(os.path.join(OUT, "phase1_pine_defaults.csv"))
 p2 = pd.read_csv(os.path.join(OUT, "phase2_sweep.csv"))
 p4 = pd.read_csv(os.path.join(OUT, "phase4_fragility.csv"))
 yr = pd.read_csv(os.path.join(OUT, "phase3_yearly.csv"))
+w_def = pd.read_csv(os.path.join(OUT, "phase5_defaults.csv"))
+w_anc = pd.read_csv(os.path.join(OUT, "phase5_anchor.csv"))
+w_geo = pd.read_csv(os.path.join(OUT, "phase5_geometry.csv"))
+w_sma = pd.read_csv(os.path.join(OUT, "phase5_weekly_smapairs.csv"))
+w_grid = pd.read_csv(os.path.join(OUT, "phase5_weekly_grid.csv"))
 per = pd.read_csv(os.path.join(OUT, "phase3_periods.csv"))
 var = pd.read_csv(os.path.join(OUT, "phase3_variants.csv"))
 
@@ -23,7 +28,7 @@ best = dict(tf="1d", sep=5.0, slm="Percent", slv=0.625, dkw={})
 p = R.cfg(best["sep"], best["slm"], best["slv"])
 p.qty_mode, p.qty_pct_equity = "pct_equity", 100.0
 d = R.bars("1d", R.MODERN)
-r = run(d, p, "1d")
+r = R.go("1d", R.MODERN, p)
 eq = r.equity.resample("1W").last().dropna()
 btc = d["close"].resample("1W").last().dropna().reindex(eq.index).ffill()
 curve = [{"t": t.strftime("%Y-%m-%d"),
@@ -67,6 +72,29 @@ bundle = {
                .apply(lambda g: {"median_is_pf": round(float(g.is_pf.median()), 3),
                                  "median_oos_pf": round(float(g.oos_pf.median()), 3)},
                       include_groups=False).to_dict()),
+    "medtrades": {tf: {"is": int(p2[p2.timeframe == tf].is_trades.median()),
+                       "oos": int(p2[p2.timeframe == tf].oos_trades.median())}
+                  for tf in p2.timeframe.unique()},
+    "weekly": {
+        "defaults": w_def[["label", "trades", "win_rate", "profit_factor", "net_profit_pct",
+                           "sl_exits", "tp_exits", "exposure_pct"]].to_dict("records"),
+        "anchor": w_anc[["label", "trades", "win_rate", "profit_factor",
+                         "avg_trade_pct"]].to_dict("records"),
+        "geometry": w_geo.to_dict("records"),
+        "smapairs": w_sma[["label", "trades", "win_rate", "profit_factor", "avg_trade_pct",
+                           "max_dd_pct"]].head(10).to_dict("records"),
+        "grid": {"configs": int(len(w_grid)),
+                 "median_trades": int(w_grid.trades.median()),
+                 "reaching30": int((w_grid.trades >= 30).sum()),
+                 "reaching10": int((w_grid.trades >= 10).sum()),
+                 "pf_gt1": int((w_grid.profit_factor > 1).sum())},
+        "split": [
+            {"label": "Monday weeks · 2012–2019", "trades": 19, "pf": 1.848, "wr": 31.6},
+            {"label": "Monday weeks · 2019–2026", "trades": 31, "pf": 1.325, "wr": 35.5},
+            {"label": "Sunday weeks · 2012–2019", "trades": 18, "pf": 1.351, "wr": 22.2},
+            {"label": "Sunday weeks · 2019–2026", "trades": 33, "pf": 0.819, "wr": 30.3},
+        ],
+    },
     "yearly": yr.to_dict("records"),
     "periods": per[["label", "trades", "win_rate", "profit_factor", "net_profit_pct",
                     "max_dd_pct"]].to_dict("records"),
@@ -75,12 +103,14 @@ bundle = {
     "equity": curve,
     "buyhold": [R.buy_hold("1d", w) for w in [R.MODERN, R.IS, R.OOS_FWD, R.FULL]],
     "target_distance": [
-        {"tf": "1h", "median_target_pct": 2.10, "p90_target_pct": 7.01,
-         "median_sep_pct": 2.42, "median_bar_range_pct": 0.68},
-        {"tf": "4h", "median_target_pct": 4.72, "p90_target_pct": 15.60,
-         "median_sep_pct": 5.49, "median_bar_range_pct": 1.46},
-        {"tf": "1d", "median_target_pct": 16.66, "p90_target_pct": 36.95,
-         "median_sep_pct": 19.42, "median_bar_range_pct": 3.98},
+        {"tf": "1h", "signals": 3257, "median_target_pct": 2.10, "p90_target_pct": 7.01,
+         "median_bar_range_pct": 0.68},
+        {"tf": "4h", "signals": 735, "median_target_pct": 4.72, "p90_target_pct": 15.60,
+         "median_bar_range_pct": 1.46},
+        {"tf": "1d", "signals": 97, "median_target_pct": 16.66, "p90_target_pct": 36.95,
+         "median_bar_range_pct": 3.98},
+        {"tf": "1w", "signals": 6, "median_target_pct": 53.20, "p90_target_pct": 60.42,
+         "median_bar_range_pct": 11.37},
     ],
 }
 

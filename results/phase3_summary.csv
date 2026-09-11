@@ -1,2 +1,2 @@
 label,timeframe,start,end,years,trades,wins,losses,win_rate,profit_factor,net_profit,net_profit_pct,cagr_pct,max_dd_pct,sharpe,avg_trade_pct,avg_win_pct,avg_loss_pct,tp_exits,sl_exits,long_trades,long_wr,long_pnl,short_trades,short_wr,short_pnl,exposure_pct,avg_bars_held
-"best config, 2017+",1d,2017-01-01,2026-09-10,9.69,82,5,77,6.1,1.725,4120.45,4.12,0.42,-3.11,0.35,0.5025,19.602,-0.738,5,77,39,10.3,6726.88,43,2.3,-2606.43,6.98,3.0
+"best config, 2017+",1d,2017-01-01,2026-09-10,9.69,86,5,81,5.81,1.622,3758.51,3.76,0.38,-3.12,0.32,0.437,19.602,-0.746,5,81,39,10.3,6726.88,47,2.1,-2968.37,7.09,2.9

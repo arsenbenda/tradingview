@@ -118,8 +118,16 @@ class Result:
 # --------------------------------------------------------------------------
 # engine
 # --------------------------------------------------------------------------
-def run(df: pd.DataFrame, p: Params, timeframe: str = "") -> Result:
-    """df: DatetimeIndex with columns open/high/low/close (UTC)."""
+def run(df: pd.DataFrame, p: Params, timeframe: str = "",
+        trade_from: Optional[pd.Timestamp] = None) -> Result:
+    """df: DatetimeIndex with columns open/high/low/close (UTC).
+
+    `trade_from` marks the first bar allowed to OPEN a trade.  Bars before it
+    still feed the moving averages, so a test window is not silently short of
+    its first `sma_slow` bars -- it warms up on the history preceding it, the
+    way a chart does.  A trade opened inside the window is still carried to its
+    natural exit.
+    """
     o = df["open"].to_numpy(float)
     h = df["high"].to_numpy(float)
     l = df["low"].to_numpy(float)
@@ -163,6 +171,7 @@ def run(df: pd.DataFrame, p: Params, timeframe: str = "") -> Result:
 
     slip = p.slippage_ticks * p.mintick
     n = len(df)
+    i0 = int(idx.searchsorted(trade_from)) if trade_from is not None else 0
 
     pos = 0                 # 0 flat, +1 long, -1 short
     entry_px = 0.0
@@ -236,7 +245,7 @@ def run(df: pd.DataFrame, p: Params, timeframe: str = "") -> Result:
                 last_exit_bar = i                        # Pine: no entry on this bar
 
         # ---------- 2. entry at the close of bar i ----------
-        if pos == 0 and i != last_exit_bar:
+        if pos == 0 and i != last_exit_bar and i >= i0:
             side = 1 if LS[i] else (-1 if SS[i] else 0)
             if side:
                 ref = ci + slip * side                   # slipped market fill
@@ -276,9 +285,10 @@ def run(df: pd.DataFrame, p: Params, timeframe: str = "") -> Result:
         else:
             eq_curve[i] = equity
 
+    eq = pd.Series(eq_curve, index=idx)[i0:]
     return Result(params=p, timeframe=timeframe, trades=trades,
-                  equity=pd.Series(eq_curve, index=idx), bars=n,
-                  start=idx[0] if n else None, end=idx[-1] if n else None)
+                  equity=eq, bars=n - i0,
+                  start=idx[i0] if n > i0 else None, end=idx[-1] if n else None)
 
 
 def _fees(p: Params, qty: float, entry_px: float, exit_px: float) -> float:

@@ -29,7 +29,7 @@ from metrics import summary, trades_frame, yearly
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
 OUT = os.path.abspath(os.path.join(HERE, "..", "results"))
-TFS = ["5m", "15m", "1h", "4h", "1d"]
+TFS = ["5m", "15m", "1h", "4h", "1d", "1w"]
 
 IS = ("2017-01-01", "2022-01-01")        # selection window
 OOS_FWD = ("2022-01-01", None)           # never used for selection
@@ -55,6 +55,7 @@ _cache: dict = {}
 
 
 def bars(tf: str, window=MODERN) -> pd.DataFrame:
+    """The window itself, with nothing before it (used for buy & hold)."""
     start, end = window
     if tf not in _cache:
         _cache[tf] = pd.read_parquet(os.path.join(DATA, f"btcusd_bitstamp_{tf}.parquet"))
@@ -64,6 +65,25 @@ def bars(tf: str, window=MODERN) -> pd.DataFrame:
     if end:
         d = d[d.index < end]
     return d
+
+
+def go(tf: str, window, p: Params):
+    """Run `p` over `window`, warming the moving averages up on the bars BEFORE it.
+
+    Slicing a window and then computing a 200-period SMA inside it silently
+    throws away the window's first 200 bars.  That is 11 % of a five-year daily
+    window and 77 % of a five-year weekly one, so the averages are fed from
+    prior history and only entries are gated to the window.
+    """
+    start, end = window
+    full = bars(tf, (None, end))
+    warm = max(p.sma_slow, p.atr_len) + 2
+    if start is None:
+        return run(full, p, tf)
+    pos = int(full.index.searchsorted(pd.Timestamp(start, tz="UTC")))
+    if pos >= len(full):
+        return run(full.iloc[:0], p, tf)
+    return run(full.iloc[max(0, pos - warm):], p, tf, trade_from=full.index[pos])
 
 
 def cfg(sep, slm, slv, **kw) -> Params:
@@ -96,7 +116,7 @@ def phase1() -> pd.DataFrame:
     for tf in TFS:
         for win, tag in [(MODERN, "2017+"), (("2024-01-01", None), "2024+")]:
             p = Params(qty_mode="fixed", qty_fixed=1.0, **PINE)
-            rows.append(summary(run(bars(tf, win), p, tf), f"Pine defaults ({tag})"))
+            rows.append(summary(go(tf, win, p), f"Pine defaults ({tag})"))
     return pd.DataFrame(rows)
 
 
@@ -105,8 +125,8 @@ def phase2() -> pd.DataFrame:
     rows = []
     for tf, sep, (slm, slv), (dlbl, dkw) in itertools.product(TFS, SEP_GRID, SL_GRID, DIRS):
         p = cfg(sep, slm, slv, **dkw)
-        a = summary(run(bars(tf, IS), p, tf))
-        b = summary(run(bars(tf, OOS_FWD), p, tf))
+        a = summary(go(tf, IS, p))
+        b = summary(go(tf, OOS_FWD, p))
         rows.append({
             "timeframe": tf, "sep_pct": sep, "direction": dlbl,
             "sl_kind": slm, "sl_val": slv,
@@ -122,7 +142,7 @@ def phase3(best: dict) -> dict:
     tf, sep, slm, slv = best["tf"], best["sep"], best["slm"], best["slv"]
     dkw = best["dkw"]
     out = {"best": best}
-    r = run(bars(tf, MODERN), cfg(sep, slm, slv, **dkw), tf)
+    r = go(tf, MODERN, cfg(sep, slm, slv, **dkw))
     out["summary"] = pd.DataFrame([summary(r, "best config, 2017+")])
     out["yearly"] = yearly(r)
     out["trades"] = trades_frame(r)
@@ -130,7 +150,7 @@ def phase3(best: dict) -> dict:
     rows = []
     for lbl, win in [("in-sample 2017-2021", IS), ("OOS forward 2022-2026", OOS_FWD),
                      ("OOS backward 2012-2016", OOS_BACK), ("full 2012-2026", FULL)]:
-        rows.append(summary(run(bars(tf, win), cfg(sep, slm, slv, **dkw), tf), lbl))
+        rows.append(summary(go(tf, win, cfg(sep, slm, slv, **dkw)), lbl))
     out["periods"] = pd.DataFrame(rows)
 
     rows = []
@@ -150,12 +170,12 @@ def phase3(best: dict) -> dict:
                     ("SMA 50/300", dict(sma_fast=50, sma_slow=300))]:
         merged = dict(dkw)
         merged.update(kw)
-        rows.append(summary(run(bars(tf, MODERN), cfg(sep, slm, slv, **merged), tf), lbl))
+        rows.append(summary(go(tf, MODERN, cfg(sep, slm, slv, **merged)), lbl))
     out["variants"] = pd.DataFrame(rows)
 
     pe = cfg(sep, slm, slv, **dkw)
     pe.qty_mode, pe.qty_pct_equity = "pct_equity", 100.0
-    rc = run(bars(tf, MODERN), pe, tf)
+    rc = go(tf, MODERN, pe)
     out["compound"] = pd.DataFrame([summary(rc, "100% of equity per trade, compounding")])
     out["equity"] = rc.equity
     return out
@@ -169,8 +189,8 @@ def phase4(p2: pd.DataFrame) -> pd.DataFrame:
         dkw = dict(DIRS[[d[0] for d in DIRS].index(w.direction)][1])
         slv = None if w.sl_kind == "1R to TP" else float(w.sl_val)
         p = cfg(float(w.sep_pct), w.sl_kind, slv, **dkw)
-        rb = run(bars(w.timeframe, OOS_BACK), p, w.timeframe)
-        rf = run(bars(w.timeframe, MODERN), p, w.timeframe)
+        rb = go(w.timeframe, OOS_BACK, p)
+        rf = go(w.timeframe, MODERN, p)
         pnl = np.array([t.pnl for t in rf.trades])
         if len(pnl) == 0:
             continue
@@ -191,6 +211,72 @@ def phase4(p2: pd.DataFrame) -> pd.DataFrame:
             "top3_share_of_gross_profit": round(100 * float(top3 / gross_profit), 1) if gross_profit > 0 else np.nan,
         })
     return pd.DataFrame(rows)
+
+
+def phase5_weekly() -> dict:
+    """1D and 1W head to head, and everything that could make 1W work.
+
+    The standard screen cannot judge 1W at all: a 200-week SMA is 3.8 years of
+    warmup and the strategy fires so rarely that no window reaches the 30-trade
+    minimum.  So the weekly grid is run over the whole history instead, and the
+    SMA pair is varied down to lengths a weekly chart can actually support.
+    """
+    out = {}
+
+    rows = []
+    for tf in ["1d", "1w"]:
+        for win, tag in [(MODERN, "2017+"), (FULL, "2012+")]:
+            p = Params(qty_mode="fixed", qty_fixed=1.0, **PINE)
+            rows.append(summary(go(tf, win, p), f"{tf} Pine defaults {tag}"))
+    out["defaults"] = pd.DataFrame(rows)
+
+    # the full adapted grid on 1W, over all available history
+    rows = []
+    for sep, (slm, slv), (dlbl, dkw) in itertools.product(SEP_GRID, SL_GRID, DIRS):
+        p = cfg(sep, slm, slv, **dkw)
+        s_ = summary(go("1w", FULL, p), f"sep {sep}% / {slm}{'' if slv is None else ' ' + str(slv)}")
+        s_["sep_pct"], s_["sl_kind"], s_["sl_val"], s_["direction"] = sep, slm, slv, dlbl
+        rows.append(s_)
+    out["grid"] = pd.DataFrame(rows)
+
+    # a 200-week average is 3.8 years -- try pairs a weekly chart can support
+    rows = []
+    for f, sl in [(50, 200), (20, 100), (20, 50), (10, 40), (5, 20), (4, 12)]:
+        for slm, slv, lbl in [("Percent", 5.0, "5% stop"), ("1R to TP", None, "1R"),
+                              ("ATR", 2.0, "2xATR")]:
+            p = cfg(3.0, slm, slv, sma_fast=f, sma_slow=sl)
+            s_ = summary(go("1w", FULL, p), f"SMA {f}/{sl} · {lbl}")
+            s_["fast"], s_["slow"], s_["stop"] = f, sl, lbl
+            rows.append(s_)
+    out["smapairs"] = pd.DataFrame(rows)
+
+    # does the answer depend on where the week is cut?
+    rows = []
+    for tf, lbl in [("1w", "weeks open Monday"), ("1w-sun", "weeks open Sunday")]:
+        rows.append(summary(go(tf, FULL, Params(qty_mode="fixed", qty_fixed=1.0, **PINE)),
+                            f"Pine defaults · {lbl}"))
+        rows.append(summary(go(tf, FULL, cfg(3.0, "Percent", 5.0, sma_fast=10, sma_slow=40)),
+                            f"SMA 10/40, 5% stop · {lbl}"))
+    out["anchor"] = pd.DataFrame(rows)
+
+    # how far away is the target on a weekly chart?
+    rows = []
+    for tf in ["1d", "1w"]:
+        d = bars(tf, FULL)
+        f_ = d.close.rolling(50).mean()
+        s_ = d.close.rolling(200).mean()
+        xu = (d.close > f_) & (d.close.shift(1) <= f_.shift(1))
+        xd = (d.close < f_) & (d.close.shift(1) >= f_.shift(1))
+        sig = (xu & (f_ < s_)) | (xd & (f_ > s_))
+        dist = ((s_ - d.close).abs() / d.close * 100)[sig].dropna()
+        rng = ((d.high - d.low) / d.close * 100).dropna()
+        rows.append({"timeframe": tf, "bars": len(d), "signals": int(sig.sum()),
+                     "median_target_pct": round(float(dist.median()), 2),
+                     "p90_target_pct": round(float(dist.quantile(.9)), 2),
+                     "median_bar_range_pct": round(float(rng.median()), 2),
+                     "target_over_bar_range": round(float(dist.median() / rng.median()), 1)})
+    out["geometry"] = pd.DataFrame(rows)
+    return out
 
 
 def main() -> None:
@@ -270,6 +356,35 @@ def main() -> None:
             print(surv.to_string(index=False))
     else:
         print("no configuration was profitable in-sample with >=30 trades")
+
+    print("\n" + "=" * 108)
+    print("PHASE 5  |  daily vs weekly")
+    print("=" * 108)
+    d5 = phase5_weekly()
+    show = ["label", "start", "end", "trades", "win_rate", "profit_factor", "net_profit_pct",
+            "max_dd_pct", "avg_trade_pct", "sl_exits", "tp_exits", "exposure_pct"]
+    for k in ["defaults", "anchor", "geometry"]:
+        print(f"\n--- {k} ---")
+        df = d5[k]
+        print(df[[c for c in show if c in df.columns]].to_string(index=False)
+              if k != "geometry" else df.to_string(index=False))
+        df.to_csv(os.path.join(OUT, f"phase5_{k}.csv"), index=False)
+    g = d5["grid"].sort_values("profit_factor", ascending=False)
+    g.to_csv(os.path.join(OUT, "phase5_weekly_grid.csv"), index=False)
+    print(f"\n--- weekly grid: {len(g)} configurations over the full history ---")
+    print(f"  configurations reaching 30 trades: {int((g.trades >= 30).sum())}"
+          f"   ·  reaching 10 trades: {int((g.trades >= 10).sum())}")
+    print(f"  median trades per configuration: {int(g.trades.median())}"
+          f"   ·  median profit factor: {g.profit_factor.median():.3f}")
+    print(f"  profitable (PF>1): {int((g.profit_factor > 1).sum())}"
+          f"   ·  of those, with >=10 trades: {int(((g.profit_factor > 1) & (g.trades >= 10)).sum())}")
+    print(g[["sep_pct", "sl_kind", "sl_val", "direction", "trades", "win_rate",
+             "profit_factor", "avg_trade_pct"]].head(8).to_string(index=False))
+    sp = d5["smapairs"].sort_values("profit_factor", ascending=False)
+    sp.to_csv(os.path.join(OUT, "phase5_weekly_smapairs.csv"), index=False)
+    print("\n--- weekly with shorter SMA pairs (full history, 3% filter) ---")
+    print(sp[["label", "trades", "win_rate", "profit_factor", "avg_trade_pct",
+              "net_profit_pct", "max_dd_pct"]].to_string(index=False))
 
 
 if __name__ == "__main__":
