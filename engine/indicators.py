@@ -156,8 +156,12 @@ def ichimoku(
             "senkou_b": senkou_b,
             "span_a_now": span_a_now,
             "span_b_now": span_b_now,
-            "cloud_top": pd.concat([span_a_now, span_b_now], axis=1).max(axis=1),
-            "cloud_bot": pd.concat([span_a_now, span_b_now], axis=1).min(axis=1),
+            # skipna=False: in Pine math.max(ssa, ssb) con ssb = na vale na.
+            # Con il default di pandas la nuvola risulterebbe definita gia' dalla
+            # barra 52 usando il solo Span A, e la strategia opererebbe durante
+            # il warmup su una nuvola meta' inventata.
+            "cloud_top": pd.concat([span_a_now, span_b_now], axis=1).max(axis=1, skipna=False),
+            "cloud_bot": pd.concat([span_a_now, span_b_now], axis=1).min(axis=1, skipna=False),
         },
         index=df.index,
     )

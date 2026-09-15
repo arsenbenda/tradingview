@@ -65,10 +65,10 @@ def test_la_size_deriva_dal_prezzo_di_fill_non_dal_close_di_segnale():
         initial_capital=100_000.0,
     )
     trade = res.trades[0]
-    assert trade.qty == pytest.approx(100.0)
+    assert trade.initial_qty == pytest.approx(100.0)   # qty residua e' 0 dopo la chiusura
     assert trade.risk_amount == pytest.approx(1000.0)
     # perdita massima teorica = rischio dichiarato
-    assert (trade.entry_price - 100.0) * trade.qty == pytest.approx(1000.0)
+    assert (trade.entry_price - 100.0) * trade.initial_qty == pytest.approx(1000.0)
 
 
 def test_costi_applicati_su_entrambi_i_lati():
@@ -169,3 +169,30 @@ def test_lo_short_guadagna_quando_il_prezzo_scende():
     trade = res.trades[0]
     assert trade.direction == -1
     assert trade.pnl > 0
+
+
+def test_uscita_parziale_realizza_meta_e_lascia_il_resto_aperto():
+    """La v3.2 esce in tranche (20% e 30%): il motore deve reggere le frazioni."""
+    from engine.backtest import Strategy, Intent, run_strategy
+
+    class Scalata(Strategy):
+        def entry(self, state):
+            return Intent(1, 50.0) if state.i == 0 else None
+
+        def manage(self, state):
+            if state.i == 2:
+                return 0.5, None      # chiude meta'
+            if state.i == 3:
+                return True, None     # chiude il resto
+            return False, None
+
+    df = frame([(100, 101, 99, 100), (100, 101, 99, 100),
+                (110, 111, 109, 110), (120, 121, 119, 120)])
+    res = run_strategy(df, Scalata(), costs=NO_COST, risk_pct=0.01, initial_capital=100_000.0)
+
+    t = res.trades[0]
+    assert t.initial_qty == pytest.approx(20.0)      # rischio 1000 / stop 50
+    assert t.partials == 1
+    assert t.qty == pytest.approx(0.0)
+    # meta' venduta a 110 (+10), meta' a 120 (+20) partendo da 100
+    assert t.pnl == pytest.approx(10.0 * 10.0 + 10.0 * 20.0)
