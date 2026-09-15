@@ -8,7 +8,7 @@ perché TradingView non espone API per lo Strategy Tester.
 
 ```bash
 pip install pandas numpy pytest
-python3 -m pytest tests/ -q                      # 98 test, devono passare tutti
+python3 -m pytest tests/ -q                      # 102 test, devono passare tutti
 python3 scripts/run_benchmark.py                 # benchmark, i sei asset
 python3 scripts/run_benchmark.py --universe extended   # gli stessi parametri sui quindici
 python3 scripts/run_benchmark.py --universe no-crypto  # i tredici senza BTC ed ETH
@@ -19,6 +19,8 @@ python3 scripts/run_ichimoku_tests.py            # Ichimoku come segnale e come 
 python3 scripts/run_validation.py                # walk-forward, k-fold purgato, DSR
 python3 scripts/run_risk_walkforward.py          # il rischio per trade scelto fuori campione
 python3 scripts/validate_series.py               # gate di qualità sui dati
+python3 scripts/run_parity.py --xlsx data/tradingview/*.xlsx   # motore contro Strategy Tester
+python3 scripts/run_forward.py                   # registra le decisioni di oggi (append-only)
 ```
 
 I dati sono già in `data/raw/`, puliti e verificati. Non serve rete per
@@ -122,6 +124,7 @@ engine/
   data.py         caricamento con controlli bloccanti; CORE (6), EXTENDED (15),
                   NO_CRYPTO (13)
   filters.py      componenti da innestare sul benchmark (catalogo per l'ablazione)
+  forward.py      registro append-only delle decisioni + sorveglianza (sola lettura)
   hypotheses.py   il catalogo di tutte le ipotesi provate; N_HYPOTHESES entra nel DSR
   validation.py   walk-forward, k-fold purgato con embargo, Deflated Sharpe, bootstrap
   strategies/     donchian (benchmark), sanyaku (v5.5), confluence (v3.2)
@@ -362,6 +365,32 @@ Non ripetere questi test senza una ragione nuova.
    asset non contengono l'informazione necessaria. L'unico modo di riaprire la
    domanda è allargare il campione — altri strumenti, o il tempo che passa — non
    un'altra statistica sugli stessi dati.
+
+   *Dal 2026-09-15 il tempo che passa viene raccolto* invece che aspettato:
+   `scripts/run_forward.py` registra ogni giorno la decisione e i suoi ingressi
+   in `data/forward/decisioni.jsonl`, append-only e firmato. **Nessun holdout
+   ritagliato da questo campione è pulito** — è stato guardato tutto, più volte,
+   e da un LLM che ha in addestramento l'esito di ogni evento fino al 2026. Quel
+   registro è l'unico out-of-sample non contaminato che il progetto possa avere,
+   e comincia a valere qualcosa fra qualche centinaio di barre, non domani.
+
+7. **Sorveglianza, sì; correzione automatica, no.** Il registro forward porta con
+   sé `forward.anomalie()`, che segnala il silenzio prolungato di un asset e il
+   cambio di impronta della configurazione. È **di sola lettura per costruzione**,
+   e la distinzione non è di stile:
+   * un sorvegliante che *legge, diagnostica, avvisa e al massimo ferma* è utile,
+     e il silenzio è proprio l'allarme che sarebbe servito — la v5.5 aveva smesso
+     di operare su CORN nel 2016 e nessuno se n'è accorto per undici anni di
+     backtest, ventiquattro ipotesi e novantotto test;
+   * un sorvegliante che *aggiusta i parametri* quando vede un drawdown viola la
+     regola 6, rende non validabile ciò che esegue, e ha il difetto peggiore
+     possibile nel tempismo: taglia l'esposizione dopo la perdita, cioè spesso
+     subito prima del recupero.
+
+   L'asimmetria è il criterio: **fermare fallisce verso il non fare niente,
+   aggiustare fallisce verso il fare qualcosa che nessuno ha validato.** Una
+   proposta di modifica è legittima, ma va in coda per una decisione umana ed
+   entra nel catalogo delle ipotesi come tutte le altre (regola 4).
 
 6. ~~Validare la v5.5 come si è validato tutto il resto~~: **chiusa, con esito
    negativo.** Eseguita il 2026-09-15 con lo stesso identico protocollo del

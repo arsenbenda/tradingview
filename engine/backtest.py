@@ -30,6 +30,7 @@ percorso di esecuzione, quindi nessuna possibilità che i due divergano.
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -75,6 +76,15 @@ class Result:
     equity: pd.Series
     trades: list[Trade] = field(default_factory=list)
     exposure: float = 0.0
+    #: intenzione decisa alla chiusura dell'ultima barra, da eseguire
+    #: all'apertura della successiva. ``None`` se la strategia non apre.
+    #: Serve al log forward: e' la sola parte del risultato che riguarda una
+    #: barra che non esiste ancora, e va registrata prima di conoscerne l'esito.
+    pending: "Intent | None" = None
+    #: posizione viva all'ultima barra, **prima** della chiusura d'ufficio di
+    #: fine serie. In backtest quella chiusura e' corretta (serve a misurare);
+    #: in avanti no, perche' la posizione e' davvero ancora aperta.
+    open_position: "Trade | None" = None
 
     @property
     def returns(self) -> pd.Series:
@@ -312,12 +322,21 @@ def run_strategy(
             if intent is not None and intent.direction != 0:
                 pending = (intent, close[i])
 
+    # fotografia dello stato prima della chiusura d'ufficio: e' quello che un
+    # sistema in funzione avrebbe davvero in mano alla fine dell'ultima barra
+    # copia, non riferimento: la chiusura d'ufficio qui sotto muta lo stesso
+    # oggetto (azzera qty, scrive exit_*), e un riferimento ne uscirebbe con la
+    # quantita' a zero — cioe' una posizione aperta che sembra chiusa.
+    aperta = dataclasses.replace(trades[-1]) if (trades and not st.flat) else None
+    in_attesa = pending[0] if pending is not None else None
+
     if not st.flat:
         close_position(n - 1, close[-1], "fine serie")
         equity[-1] = st.cash
 
     return Result(equity=pd.Series(equity, index=idx), trades=trades,
-                  exposure=bars_in_market / n if n else 0.0)
+                  exposure=bars_in_market / n if n else 0.0,
+                  pending=in_attesa, open_position=aperta)
 
 
 def run(

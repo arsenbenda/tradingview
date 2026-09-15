@@ -7,6 +7,8 @@ segnale non esiste, e regala alla strategia una capacità predittiva finta.
 
 from __future__ import annotations
 
+import dataclasses
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -147,3 +149,104 @@ def test_la_pausa_dopo_le_perdite_non_e_definitiva():
         f"ultimo trade il {ultimo.date()}, serie fino al {serie.index[-1].date()}: "
         "la strategia si e' fermata prima della fine"
     )
+
+
+# ---------------------------------------------------------------- log forward
+
+def test_il_registro_forward_e_append_only(tmp_path):
+    """Una riga già scritta non si riscrive, e riscriverla uguale è un no-op.
+
+    Riscrivere il passato dopo averne visto l'esito è l'unica cosa che questo
+    registro esiste per impedire. Se fosse affidato alla buona volontà non
+    sarebbe una prova, quindi il codice lo rifiuta.
+    """
+    from engine import forward
+
+    reg = tmp_path / "decisioni.jsonl"
+    d = forward.Decision(data="2026-09-14", asset="BTC", azione="apri", direzione=1,
+                         close=100.0, stop=None, quantita=None, tag="L",
+                         config="abc", dati="xyz", esecuzione_attesa="apertura successiva")
+
+    assert forward.append(reg, [d]) == 1
+    assert forward.append(reg, [d]) == 0          # identica: no-op
+    assert len(forward.load(reg)) == 1
+
+    diversa = dataclasses.replace(d, azione="fermo", direzione=0)
+    with pytest.raises(forward.RiscritturaRifiutata):
+        forward.append(reg, [diversa])
+    assert len(forward.load(reg)) == 1            # il rifiuto non sporca il file
+
+
+def test_il_registro_forward_riproduce_il_passato_giorno_per_giorno(tmp_path):
+    """Rieseguire su dati più lunghi deve riprodurre identiche le righe vecchie.
+
+    È la garanzia di assenza di lookahead applicata in avanti: si simula il
+    processo quotidiano su una finestra storica, allungando la serie di un
+    giorno alla volta. Se una riga già scritta cambiasse, ``append`` lo
+    rifiuterebbe — cioè il registro scopre da solo un motore che guarda avanti.
+    """
+    from engine import costs, data, forward
+
+    serie = data.load("BTC")
+    serie = serie[serie.index >= data.DEFAULT_START]
+    reg = tmp_path / "decisioni.jsonl"
+
+    for fine in range(len(serie) - 30, len(serie)):
+        parziale = serie.iloc[: fine + 1]
+        d = forward.decide("BTC", parziale, SanyakuV55(),
+                           costs=costs.for_asset("BTC"), risk_pct=0.01,
+                           initial_capital=100_000.0, max_notional_pct=0.60)
+        forward.append(reg, [d])       # solleva se una riga vecchia cambiasse
+
+    righe = forward.load(reg)
+    assert len(righe) == 30
+    assert [r["data"] for r in righe] == sorted(r["data"] for r in righe)
+    # una sola configurazione per tutte le righe: nessuna ri-ottimizzazione
+    assert len({r["config"] for r in righe}) == 1
+
+
+def test_il_sorvegliante_vede_il_silenzio_e_il_cambio_di_configurazione():
+    """I due allarmi che sarebbero serviti a questo progetto.
+
+    Il silenzio è il bug della pausa: la v5.5 aveva smesso di operare su CORN
+    nel 2016 e nessuno se n'era accorto. Il cambio di impronta è la regola 6
+    resa verificabile invece che promessa.
+    """
+    from engine import forward
+
+    def riga(data_, azione, config="abc"):
+        return {"data": data_, "asset": "BTC", "azione": azione, "direzione": 0,
+                "close": 1.0, "stop": None, "quantita": None, "tag": "",
+                "config": config, "dati": "x", "esecuzione_attesa": "nessuna"}
+
+    muto = [riga("2026-01-05", "apri")] + [riga(f"2026-0{m}-05", "fermo") for m in range(2, 10)]
+    problemi = forward.anomalie(muto, silenzio_massimo_giorni=90)
+    assert any("nessuna attività" in p for p in problemi)
+
+    cambiato = [riga("2026-09-01", "apri", "abc"), riga("2026-09-02", "tieni", "DIVERSA")]
+    problemi = forward.anomalie(cambiato)
+    assert any("configurazione è cambiata" in p for p in problemi)
+
+    sano = [riga("2026-09-13", "apri"), riga("2026-09-14", "tieni")]
+    assert not any("nessuna attività" in p or "configurazione" in p
+                   for p in forward.anomalie(sano))
+
+
+def test_la_posizione_aperta_a_fine_serie_non_esce_con_quantita_zero(daily):
+    """``Result.open_position`` è una copia, non un riferimento.
+
+    A fine serie il motore chiude d'ufficio la posizione: giusto in backtest,
+    dove serve a misurare, sbagliato in avanti, dove la posizione è davvero
+    ancora aperta. Se si restituisse il riferimento, quella chiusura lo
+    muterebbe subito dopo e una posizione viva uscirebbe con quantità zero —
+    cioè il log forward registrerebbe «tieni» di niente.
+    """
+    from engine import backtest, costs
+    from engine.strategies import donchian
+
+    res = backtest.run_strategy(daily, donchian.DonchianWithExit(exit_mode="canale"),
+                                costs=costs.for_asset("BTC"), risk_pct=0.01,
+                                initial_capital=100_000.0)
+    if res.open_position is not None:
+        assert res.open_position.qty > 0
+        assert res.open_position.exit_date is None
