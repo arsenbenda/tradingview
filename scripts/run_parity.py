@@ -73,18 +73,31 @@ def main() -> int:
                     help="export xlsx dello Strategy Tester")
     ap.add_argument("--tolleranza-giorni", type=int, default=2)
     ap.add_argument("--serie", default="data/raw/BTCUSD_1d.csv")
-    ap.add_argument("--da", default="2020-01-03")
+    ap.add_argument("--da", default="2020-01-03",
+                    help="inizio del backtesting range di TradingView")
     ap.add_argument("--a", default="2026-09-15")
+    ap.add_argument("--warmup-giorni", type=int, default=400,
+                    help="barre caricate PRIMA di --da perche' gli indicatori siano caldi")
     args = ap.parse_args()
 
     tv = trade_di_tradingview(args.xlsx)
     df = pd.read_csv(args.serie)
     df["date"] = pd.to_datetime(df["date"])
-    win = df.set_index("date")[args.da:args.a]
+    df = df.set_index("date")
+
+    # Il "backtesting range" di TradingView dice da quando conta i trade, non da
+    # quando esistono gli indicatori: sul grafico la nuvola e' gia' calda perche'
+    # lo storico precedente e' caricato. Troncare la serie a --da farebbe partire
+    # Ichimoku da NaN per ~78 barre e produrrebbe ingressi mancanti che sembrano
+    # divergenze di porting e sono solo riscaldamento.
+    inizio = pd.Timestamp(args.da)
+    win = df[inizio - pd.Timedelta(days=args.warmup_giorni):args.a]
+    disponibile = (win.index[0] < inizio)
 
     print(f"export: {args.xlsx.name}")
     print(f"serie:  {args.serie} | {win.index[0].date()} → {win.index[-1].date()} "
-          f"| {len(win)} barre")
+          f"| {len(win)} barre "
+          f"({'warmup ok' if disponibile else 'ATTENZIONE: nessun warmup disponibile'})")
     print(f"TradingView: {len(tv)} ingressi\n")
 
     esito = {}
@@ -93,26 +106,29 @@ def main() -> int:
             win, SanyakuV55(**kw), costs=cost_table.for_asset("BTC"),
             risk_pct=0.01, initial_capital=100_000.0, max_notional_pct=0.60,
         )
+        # solo i trade dentro il backtesting range di TradingView: il warmup
+        # serve a scaldare gli indicatori, non a produrre trade da confrontare
         ours = [(pd.Timestamp(t.entry_date).normalize(), t.entry_price, t.tag)
-                for t in res.trades]
+                for t in res.trades if pd.Timestamp(t.entry_date) >= inizio]
         c = confronta(ours, tv, args.tolleranza_giorni)
         esito[nome] = c
         print(f"{nome:22s} ingressi {c['nostri']:3d}  esatti {c['esatti']:2d}/{c['tradingview']}  "
               f"entro {args.tolleranza_giorni}gg {c[f'entro_{args.tolleranza_giorni}_giorni']:2d}/"
               f"{c['tradingview']}  nostri in più {len(c['nostri_in_piu'])}")
 
-    # scarto di prezzo fra i due feed, sulle sole date che coincidono
-    scarti = []
-    for _, r in tv.iterrows():
-        px = win["close"].asof(r["dt"])
-        if pd.notna(px) and r["Price USD"]:
-            scarti.append((px - r["Price USD"]) / r["Price USD"] * 100)
+    # Scarto fra i feed. Il prezzo del trade di TradingView e' il **fill**, cioe'
+    # l'apertura della barra d'ingresso, non la sua chiusura: confrontarlo con il
+    # close gonfia lo scarto di un ordine di grandezza (1.40% contro 0.19% di
+    # mediana su questo export) e fa sembrare differenza di fonte quella che e'
+    # solo la differenza fra due barre.
+    scarti = [abs((win["open"].asof(r["dt"]) - r["Price USD"]) / r["Price USD"] * 100)
+              for _, r in tv.iterrows()
+              if pd.notna(win["open"].asof(r["dt"])) and r["Price USD"]]
     if scarti:
-        print(f"\nscarto di prezzo fra i due feed sulle {len(scarti)} date di TradingView:")
-        print(f"  mediana {statistics.median(scarti):+.2f}%  "
-              f"min {min(scarti):+.2f}%  max {max(scarti):+.2f}%")
+        print(f"\nscarto |fill TradingView - open della stessa barra| su {len(scarti)} ingressi:")
+        print(f"  mediana {statistics.median(scarti):.2f}%   max {max(scarti):.2f}%")
         esito["scarto_feed_pct"] = {"n": len(scarti), "mediana": statistics.median(scarti),
-                                    "min": min(scarti), "max": max(scarti)}
+                                    "max": max(scarti)}
 
     OUT.mkdir(exist_ok=True)
     (OUT / "parity.json").write_text(json.dumps(esito, indent=2, default=str))

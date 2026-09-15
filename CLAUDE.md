@@ -155,6 +155,13 @@ Sei asset eterogenei, OHLCV daily, in `data/raw/`:
 BTC ed ETH (Alpha Vantage), GOLD/GLD, CRUDE/USO, CORN, EQUITY/SPY (Twelve Data).
 Periodo comune 2015-08 → oggi.
 
+C'è anche `BTCUSDT_1d_binance.csv` (archivio ufficiale Binance, 3.316 barre dal
+2017-08-17, nessun buco, gate superato), scaricato per il parity. **Non è in uso
+nei runner**, per due ragioni misurate: non migliora il parity (17/23 contro
+18/23) e comincia due anni dopo, quindi adottarlo accorcerebbe il periodo comune
+da 2015-08 a 2017-08 — il 18% del campione — cambiando ogni numero pubblicato.
+Resta disponibile come controprova indipendente su BTC.
+
 Tre difetti silenziosi trovati e documentati in `data/README.md`: il buco di 19
 mesi di Binance.US (fonte scartata), le barre duplicate nei festivi sui futures
 indice FMP, e il disallineamento della convenzione oraria fra futures ed ETF
@@ -322,11 +329,28 @@ Non ripetere questi test senza una ragione nuova.
    confrontare qualunque cosa.** Il quinto foglio contiene ogni input usato; i
    primi quattro no, e da soli portano a una conclusione sbagliata.
 
-   Quel che resta — 3 ingressi TV scoperti, 5 nostri in più — è il feed: lo scarto
-   Alpha Vantage / Binance sulle 23 date ha mediana +0.20% ma escursione da −3.75%
-   a +5.63%, e i nostri cinque in più sono gli stessi eventi su una barra diversa.
-   **Per passare da «nessuna divergenza visibile» a «nessuna divergenza» serve
-   l'export OHLCV**: con due feed diversi 18/23 è il massimo ottenibile.
+   **Il residuo resta, ed è indipendente dal feed.** Ho proposto tre spiegazioni e
+   le prime due sono state falsificate dalla misura. Scaricata la serie Binance
+   ufficiale (`data/raw/BTCUSDT_1d_binance.csv`, 3.316 barre dal 2017-08-17, gate
+   superato) e rifatto il confronto: **17/23 contro i 18/23 di Alpha Vantage** —
+   il venue esatto che TradingView dichiara non chiude il residuo, lo peggiora di
+   uno. I tre ingressi scoperti sono **gli stessi su entrambi i feed**. Anche il
+   warmup degli indicatori è stato escluso (era un difetto vero dell'harness,
+   corretto, ma il conteggio non cambia).
+
+   Nel farlo è emerso che **la misura dello scarto fra i feed era sbagliata**: il
+   prezzo nella lista trade è il **fill**, cioè l'apertura della barra, non la
+   chiusura. Contro il close dava mediana 1.40% e punte del 5.7%; contro
+   l'apertura giusta dà **0.19% mediano e 1.05% massimo**. I due feed concordano
+   fra loro e con TradingView entro due decimi di punto: non c'era nessuno scarto
+   dietro cui nascondere la divergenza.
+
+   Quel che resta è **una divergenza di porting isolata ma non diagnosticata**, e
+   il profilo è che **anticipiamo**: TV entra il 2020-04-17, noi il 2020-04-09; TV
+   il 2023-10-08, noi il 2023-10-02. Il disaccordo è su *quale barra la trinità si
+   forma*, non sul fatto che si formi. Per andare oltre serve confrontare **i
+   valori degli indicatori barra per barra** — export OHLCV o export dei plot —
+   non la lista trade. Con la sola lista trade questo è il punto di arresto.
 
    Conseguenza da non perdere: il catalogo valida la v5.5 **a default**, mentre il
    preset è una strategia diversa e non validata. Se un giorno si dovesse operare,

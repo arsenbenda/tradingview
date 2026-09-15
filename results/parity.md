@@ -66,38 +66,74 @@ codice. È l'errore gemello di quello della pausa, in direzione opposta: là il
 codice divergeva dal Pine e sembrava una scelta, qui il codice era giusto e
 sembrava un difetto.
 
-## Il residuo dopo la correzione: è il feed
+## Il residuo: reale, indipendente dal feed, non spiegato
 
-Restano 3 ingressi di TradingView senza corrispondenza e 5 nostri in più. Tutti
-si spiegano con lo scarto fra Alpha Vantage e Binance, che sulle 23 date di
-TradingView ha **mediana +0.20% ma escursione da −3.75% a +5.63%**.
+Dopo la correzione della configurazione restano **3 ingressi di TradingView che
+non produciamo** e 5-7 nostri che TradingView non ha. Ho proposto tre
+spiegazioni e **le prime due sono state falsificate dalla misura**. Le lascio
+scritte perché il modo in cui sono cadute è l'informazione utile.
 
-| ingresso TV non corrisposto | nostro close | scarto |
+**Prima ipotesi: «manca una condizione di blocco».** Falsificata dal foglio
+`Properties`: era il preset. Vedi sopra.
+
+**Seconda ipotesi: «è lo scarto fra Alpha Vantage e Binance».** Falsificata
+scaricando Binance. Scaricata la serie BTCUSDT dall'archivio ufficiale
+(`data/raw/BTCUSDT_1d_binance.csv`, 3.316 barre dal 2017-08-17, nessun buco,
+gate di qualità superato) e rifatto il confronto:
+
+| feed | esatti | entro 2 giorni | nostri in più |
+|---|---|---|---|
+| Alpha Vantage | **18/23** | 20/23 | 5 |
+| Binance | 17/23 | 20/23 | 6 |
+
+**Passare al venue esatto che TradingView dichiara non chiude il residuo — lo
+peggiora di uno.** E i tre ingressi scoperti sono **gli stessi su entrambi i
+feed**: 2020-02-22, 2020-04-17, 2023-10-08. Una divergenza che non si muove
+cambiando fonte non è una divergenza di fonte.
+
+Nel farlo è emerso che **anche la misura dello scarto fra i feed era sbagliata**.
+Il prezzo nella lista trade di TradingView è il **fill**, cioè l'apertura della
+barra d'ingresso, non la chiusura. Confrontato con il close dava mediana 1.40% ed
+escursione fino al 5.7%, e mi aveva convinto che le fonti divergessero
+abbastanza da spiegare tutto. Confrontato con l'apertura della stessa barra:
+
+| riferimento | scarto assoluto mediano | massimo |
 |---|---|---|
-| 2020-02-22 | 9.667,52 | +0.45% |
-| 2020-04-17 | 7.034,54 | **−1.85%** |
-| 2023-10-08 | 27.932,44 | −0.30% |
+| close della barra | 1.40% | 5.71% |
+| **apertura della barra** | **0.19%** | **1.05%** |
 
-E i nostri cinque in più non sono sparsi a caso: 2020-04-09 sta otto giorni prima
-del 2020-04-17 di TradingView, 2023-10-02 sei giorni prima del 2023-10-08. Sono
-**gli stessi eventi, su una barra diversa**, perché un attraversamento TK o di
-nuvola cade su un giorno diverso quando i prezzi differiscono dell'1-2%.
+I due feed concordano fra loro e con TradingView entro due decimi di punto. Non
+c'era nessun 5% da cui nascondersi.
 
-Questo era già previsto in `data/README.md`: fonti diverse per lo stesso
-strumento crypto non sono intercambiabili. Qui se ne vede il costo in unità
-interpretabili: **su ventitré ingressi, tre cadono su una barra diversa.**
+**Terza ipotesi: «è il riscaldamento degli indicatori».** Falsificata anche
+questa, ma ha trovato un difetto vero nell'harness. Il «backtesting range» di
+TradingView dice da quando contare i trade, non da quando esistono gli
+indicatori: sul grafico la nuvola è calda perché lo storico precedente è
+caricato. Troncando la serie al 2020-01-03 Ichimoku partiva da NaN per ~78 barre,
+e infatti sulla barra di segnale del 2020-02-22 `cloud_top` era NaN. Corretto —
+`run_parity.py` ora carica 400 barre di warmup e confronta solo i trade dentro il
+range — **il conteggio non cambia**: 18/23 restano 18/23.
 
-## Cosa si può e non si può concludere
+### Dove sta davvero, allora
 
-**Si può dire** che nessuna divergenza *strutturale* di porting sopravvive al
-confronto: nessun tipo di ingresso è sistematicamente scoperto, il numero di
-posizioni aperte coincide (24 contro 23), e non c'è più un verso dell'errore.
+Il residuo si separa in due parti, e solo una è dei dati:
 
-**Non si può dire** che il porting sia identico. Con due feed diversi il parity
-esatto non è raggiungibile nemmeno in linea di principio, e 18/23 è il massimo
-che questo confronto possa produrre. Per passare da «nessuna divergenza visibile»
-a «nessuna divergenza» serve l'export OHLCV di TradingView e una riesecuzione
-sulle stesse barre. Quello resta aperto.
+* **sensibile al feed** (si sposta di 1-2 giorni cambiando fonte): 2020-04-09 su
+  Alpha Vantage contro 2020-04-10 su Binance, 2020-05-22 contro 2020-05-20;
+* **indipendente dal feed** (identica su entrambi): i 3 ingressi di TradingView
+  mai prodotti, più 3 nostri sempre in più — 2023-10-02 (E1), 2023-10-24 (E2),
+  2024-05-21 (E4).
+
+La seconda parte è una divergenza di porting, ed è ora **isolata ma non
+diagnosticata**. Il profilo è che **anticipiamo**: TradingView entra il
+2020-04-17, noi il 2020-04-09; TradingView entra il 2023-10-08, noi il
+2023-10-02. Sul 2023-10-07 il prezzo è sopra la nuvola su entrambi i lati, ma il
+nostro `e1` non scatta perché la trinità si era già formata prima — cioè il
+disaccordo è su **quale barra la trinità si forma**, non sul fatto che si formi.
+
+Per andare oltre serve confrontare **i valori degli indicatori barra per barra**,
+non la lista dei trade: l'export OHLCV, o un export dei plot di Ichimoku da
+TradingView. Con la sola lista trade questo è il punto di arresto.
 
 ## Una conseguenza che riguarda il resto del progetto
 
