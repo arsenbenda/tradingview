@@ -48,12 +48,21 @@ della v5.5». È il contrario: la v5.5 ha MAR più alto su quattro asset su sei
 (BTC, ETH, GOLD, CRUDE), pareggia su EQUITY e perde solo su CORN. Restava vero
 che la v3.2 è l'unica a estrarre qualcosa da CORN, e resta vero adesso.
 
-Va detto con chiarezza cosa questo **non** è. La v5.5 è stata sviluppata su
-questi dati e non è mai passata dalla macchina di validazione che ha bocciato le
-ventitré ipotesi: nessun DSR, nessun walk-forward, nessun k-fold purgato. Uno
-Sharpe in-sample di 1.42 contro 1.39, dopo una correzione che ha cambiato il
-numero di 0.49, è esattamente il tipo di risultato che la regola 7 dice di non
-chiamare risultato.
+Va detto con chiarezza cosa questo **non** è, e adesso è stato misurato. La v5.5
+è stata sviluppata su questi dati, ed è entrata nel catalogo come
+ventiquattresima ipotesi il 2026-09-15 per essere passata dalla stessa macchina
+che ha bocciato le altre ventitré. **È falsificata**
+(`results/validation.md`, sezione «Rifacimento con N = 24»): gira a **0.64× la
+volatilità del benchmark**, e a parità di volatilità il vantaggio è +0.05 di
+Sharpe annuo contro una soglia di 0.89 — DSR 0.003, PSR 0.560. Nel walk-forward a
+candidato fisso fa 3 finestre positive su 8 con delta MAR mediano −0.36.
+
+Lo Sharpe 1.42 contro 1.39 resta vero e resta in-sample: **veniva dal
+denominatore.** CAGR più basso (5.0% contro 7.7%) ma volatilità più bassa di
+più, quindi il rapporto sale mentre la ricchezza scende. È esattamente il tipo di
+risultato che la regola 7 dice di non chiamare risultato, ed è la seconda volta
+in due giorni che una scala diversa dal benchmark si traveste da vantaggio — la
+prima era `sizing_notional`, che correva a 3.35× invece che a 0.64×.
 
 ### Il dettaglio che pesa di più
 

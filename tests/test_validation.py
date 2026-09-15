@@ -377,19 +377,24 @@ def test_la_probabilita_negativa_e_coerente_con_i_quantili():
 # il conteggio delle ipotesi
 # --------------------------------------------------------------------------
 
-def test_il_catalogo_conta_ventitre_ipotesi():
+def test_il_catalogo_conta_ventiquattro_ipotesi():
     """Il numero che entra nel Deflated Sharpe non può divergere dal provato.
 
     Se questo test fallisce dopo aver aggiunto una voce al catalogo, **non** va
     aggiornato di riflesso: va prima ricalcolato il DSR, perché ogni ipotesi in
     più alza la soglia per tutte le precedenti. Aggiornare il numero e basta
     lascerebbe pubblicati dei DSR calcolati con un N che non esiste più.
+
+    Passato da 23 a 24 il 2026-09-15 con `sanyaku_v55`, e il DSR è stato
+    ricalcolato prima di toccare questa riga: `results/validation.md`, sezione
+    «Rifacimento con N = 24».
     """
-    assert hypotheses.N_HYPOTHESES == 23
+    assert hypotheses.N_HYPOTHESES == 24
     assert len(hypotheses.CATALOGUE) == hypotheses.N_HYPOTHESES
     assert hypotheses.BASE_NAME not in hypotheses.CATALOGUE
     assert hypotheses.CANDIDATE in hypotheses.CATALOGUE
     assert "sizing_notional" in hypotheses.CATALOGUE
+    assert "sanyaku_v55" in hypotheses.CATALOGUE
 
 
 def test_il_pool_di_selezione_contiene_anche_la_rinuncia():

@@ -415,3 +415,126 @@ già provate sugli stessi dati.
   non confermata.
 * **La soglia è ora 0.89 di Sharpe annuo** (a parità di volatilità) contro lo 0.85
   di prima. Chi volesse una ventiquattresima ipotesi la alzerebbe ancora.
+
+---
+
+# Rifacimento con N = 24: la Sanyaku v5.5
+
+Aggiunto il 2026-09-15, poche ore dopo la sezione precedente. La
+ventiquattresima ipotesi è **la v5.5 intera** — non un componente innestato sul
+benchmark, ma la strategia Pine con i suoi ingressi, le sue uscite e il suo
+sizing. È entrata nel catalogo dopo che il parity test contro lo Strategy Tester
+ha trovato il difetto che la teneva ferma (`results/comparison.md`): corretta la
+pausa, il suo MAR passa da 0.37 a 0.83 e il suo Sharpe da 0.93 a **1.42, cioè
+sopra l'1.39 del benchmark**. Quello era l'unico numero del progetto che
+sembrasse battere il benchmark su una metrica primaria, e andava misurato con lo
+stesso metro di tutto il resto.
+
+Ha ricevuto **lo stesso identico protocollo del candidato in tutte e cinque le
+prove**, non solo il DSR: confrontare due verdetti ottenuti con protocolli
+diversi non avrebbe voluto dire niente.
+
+## La risposta
+
+**No, e con un margine più ampio di `cloud_exit`. La v5.5 è falsificata.**
+
+| prova | `cloud_exit` | **Sanyaku v5.5** |
+|---|---|---|
+| delta MAR in-sample | +0.28 | **−0.04** |
+| walk-forward fisso, delta MAR mediano | +0.27, **7/8** positivi | **−0.36**, **3/8** positivi |
+| walk-forward fisso, delta Sharpe mediano | +0.10, 5/8 | **−0.07**, 3/8 |
+| k-fold purgato, delta MAR mediano | +0.76, **5/5** positivi | **+0.01**, **3/5** positivi |
+| DSR del differenziale grezzo | 0.001 | **0.000** (SR annuo **−0.86**) |
+| DSR a parità di volatilità | 0.075 | **0.003** (SR annuo **+0.05**) |
+| PSR a parità di volatilità | 0.952 | **0.560** |
+| bootstrap, P(delta ≤ 0), finestre concatenate | 20-30% | **49-51%** |
+
+L'ultima riga è la più chiara di tutte: sulle finestre di test concatenate il
+delta di MAR della v5.5 contro il benchmark è **−0.02 in media, con P(delta ≤ 0)
+del 51%**. È una monetina.
+
+## Perché lo Sharpe 1.42 non era un vantaggio
+
+**La v5.5 gira a 0.64× la volatilità del benchmark.** È tutta lì.
+
+Uno Sharpe è un rapporto fra rendimento e volatilità, e si può alzarlo
+abbassando il denominatore invece che alzando il numeratore. È esattamente quello
+che fa la v5.5: CAGR 5.0% contro 7.7% (numeratore più basso) ma drawdown 6.1%
+contro 8.9% e volatilità dei rendimenti al 64% di quella del benchmark
+(denominatore più basso di più). Il rapporto sale, la ricchezza scende.
+
+Riportata alla scala del benchmark — cioè chiedendo *quanto renderebbe la v5.5
+se corresse lo stesso rischio* — il vantaggio è **+0.05 di Sharpe annuo**, contro
+una soglia di 0.89. Non è piccolo: è zero.
+
+### È l'immagine speculare di `sizing_notional`
+
+Le due ipotesi più recenti del catalogo sbagliano nello stesso identico modo, in
+direzioni opposte:
+
+| | vol / base | cosa sembrava | a parità di volatilità |
+|---|---|---|---|
+| `sizing_notional` (23ª) | **3.35×** | differenziale grezzo più alto del progetto, DSR 0.792 | +0.20 di Sharpe, DSR 0.012 |
+| `sanyaku_v55` (24ª) | **0.64×** | l'unico Sharpe sopra il benchmark, 1.42 contro 1.39 | +0.05 di Sharpe, DSR 0.003 |
+
+Una correva al triplo della scala e il suo differenziale grezzo era positivo per
+costruzione; l'altra corre a due terzi della scala e il suo *Sharpe* è alto per
+costruzione. La stessa correzione — riscalare alla volatilità del benchmark prima
+di confrontare — le uccide entrambe. È la conferma sul campo della regola 4:
+**il confronto a parità di volatilità non è un raffinamento, è il test.**
+
+## La v5.5 non è stabile, e questo è indipendente dal DSR
+
+Il DSR è una statistica che punisce il numero di tentativi, e si può sempre
+discutere se la penalità sia troppo severa. Il walk-forward a candidato fisso no:
+misura solo se una strategia si comporta allo stesso modo in periodi diversi, e
+la v5.5 non lo fa.
+
+Delta di MAR contro il benchmark, finestra per finestra: −2.09, −1.51, **+1.47**,
+−0.70, −0.03, +0.66, **+2.52**, −0.96. Media −0.08, mediana −0.36, positiva in
+tre finestre su otto. I due valori positivi grandi sono il 2020-21 e il 2024-25,
+cioè i due anni in cui le crypto hanno corso — che è esattamente il modo in cui
+`results/universe_extended.md` descrive tutto il resto del progetto.
+
+`cloud_exit`, sulle stesse otto finestre, faceva 7/8 positivi e non crollava mai.
+Qualunque cosa si pensi del DSR, **le due non sono la stessa cosa**, e la v5.5 è
+la peggiore delle due.
+
+## Quanto è costata questa ipotesi alle precedenti: quasi niente
+
+La ventitreesima era costata cara — la soglia del differenziale grezzo era
+passata da 0.85 a 1.19 di Sharpe annuo, e il DSR di `cloud_exit` da 0.025 a
+0.001. La ventiquattresima non costa quasi nulla:
+
+| | N = 23 | N = 24 |
+|---|---|---|
+| soglia, differenziale grezzo | 1.19 | **1.19** |
+| soglia, a parità di volatilità | 0.89 | **0.89** |
+| DSR di `cloud_exit`, grezzo | 0.001 | 0.001 |
+| DSR di `cloud_exit`, a parità di volatilità | 0.074 | **0.075** |
+
+Il DSR di `cloud_exit` **sale**, di un millesimo, aggiungendo un'ipotesi. Non è
+un errore: la soglia del DSR dipende da N *e* dalla dispersione dei tentativi, e
+la v5.5 cade in mezzo alla distribuzione invece che sulla coda. Alzare N di uno
+e non allargare la dispersione sono due effetti che quasi si annullano.
+
+È la controprova diretta di quanto scritto nella regola 4 dopo la ventitreesima:
+**non è solo N a salire, è la dispersione.** Un'ipotesi mediocre costa poco alle
+altre; un'ipotesi estrema costa molto, anche quando è sbagliata.
+
+## Cosa cambia nel resto del progetto
+
+* **La v5.5 è falsificata**, non "non falsificata". La differenza con
+  `cloud_exit` è sostanziale e va tenuta: `cloud_exit` supera ogni prova di
+  stabilità e cade solo sulla penalità per tentativi multipli; la v5.5 cade su
+  tutte, penalità inclusa.
+* **Il MAR 0.83 e lo Sharpe 1.42 di `comparison.md` restano veri e restano
+  in-sample.** Non vanno cancellati né corretti: vanno letti per quello che sono,
+  la performance di una strategia sul campione su cui è stata costruita.
+* **Il benchmark non si muove**, di nuovo: 0.87 / 1.39 / 7.7% / 8.9% / 303 trade.
+  Dopo ventiquattro ipotesi è ancora la cosa più difficile da battere, e adesso
+  lo è anche contro la strategia Pine da cinquantatré input che il progetto
+  doveva validare all'inizio.
+* **La questione aperta 6 è chiusa.** Restano la 4 (residuo del parity, 39
+  ingressi contro 23) e la 5 (dati fuori campione veri) — e nessuna delle due si
+  risolve con un'altra statistica su questi dati.

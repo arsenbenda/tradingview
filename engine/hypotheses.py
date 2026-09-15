@@ -27,6 +27,7 @@ import pandas as pd
 
 from . import backtest, costs as cost_table, filters
 from .strategies import donchian, ichimoku_tf
+from .strategies.sanyaku import SanyakuV55
 
 CAPITAL = 100_000.0
 RISK_PCT = 0.01
@@ -110,6 +111,33 @@ def _sizing_notional() -> Runner:
     return run
 
 
+def _sanyaku_v55() -> Runner:
+    """La strategia Pine v5.5 intera, non un componente innestato sul benchmark.
+
+    È l'unica voce del catalogo che non parte dagli ingressi Donchian: segnale,
+    uscita e sizing sono tutti suoi. Entra qui perché la regola 4 conta le
+    ipotesi, non le loro dimensioni, e perché fino al 2026-09-15 il suo numero
+    era sbagliato — la pausa da perdite consecutive non scadeva mai e la teneva
+    ferma dal 67% al 94% delle barre (`results/comparison.md`). Corretta quella,
+    fa MAR 0.83 contro 0.87 del benchmark e Sharpe 1.42 contro 1.39, ed è la
+    sola cosa del progetto che meriti di passare da qui senza essere stata
+    cercata: era già nel repo, misurata male.
+
+    ``max_notional_pct=0.60`` riproduce il vincolo usato in
+    ``scripts/compare_strategies.py``, così il numero che entra nel DSR è lo
+    stesso che sta nella tabella di confronto.
+    """
+
+    def run(asset: str, df: pd.DataFrame, cost_mult: float = 1.0) -> backtest.Result:
+        return backtest.run_strategy(
+            df, SanyakuV55(),
+            costs=cost_table.for_asset(asset, cost_mult),
+            risk_pct=RISK_PCT, initial_capital=CAPITAL, max_notional_pct=0.60,
+        )
+
+    return run
+
+
 BASE_NAME = "donchian_base"
 BASE: Runner = _exit_variant("canale")
 
@@ -124,6 +152,11 @@ CATALOGUE: dict[str, Runner] = {
     # contata come tutte le altre: la regola 4 non fa sconti all'origine di
     # un'ipotesi, e aggiungerla alza la soglia del DSR per le ventidue precedenti.
     "sizing_notional": _sizing_notional(),
+    # 24ª: la v5.5 intera. Come la 23ª non è stata cercata — è uscita dal parity
+    # test contro il Pine, che ha trovato un difetto di misura, non un vantaggio
+    # nuovo — ma si conta come tutte le altre, e alzare N a 24 alza la soglia
+    # del DSR anche per `cloud_exit` e per `sizing_notional`.
+    "sanyaku_v55": _sanyaku_v55(),
 }
 
 #: quante ipotesi sono state provate. Entra nel Deflated Sharpe come N.

@@ -39,19 +39,25 @@ e sullo Sharpe passa davanti (1.42 contro 1.39). Su BTC, l'asset su cui entrambe
 sono state sviluppate, la v3.2 perde in casa (0.27 contro 0.65) mentre la v5.5
 fa 0.73 ed è il suo asset migliore.
 
-**Questo non è un vantaggio dimostrato, ed è importante non leggerlo così.** La
-v5.5 è stata sviluppata su questi dati e non è mai passata dal DSR, dal
-walk-forward né dal k-fold purgato: per la regola 7 è un numero in-sample, non un
-risultato. Vale come *la sola cosa sul tavolo che meriti di essere validata*, non
-come qualcosa di validato. Il numero precedente (MAR 0.37) era un difetto di
-misura, non della strategia — vedi `results/comparison.md`.
+**Quello Sharpe non è un vantaggio, ed è stato misurato.** Sottoposta alla stessa
+validazione delle altre ipotesi, la v5.5 è **falsificata**: gira a **0.64× la
+volatilità del benchmark**, e a parità di volatilità il vantaggio è +0.05 di
+Sharpe annuo contro una soglia di 0.89 — **DSR 0.003**, PSR 0.560. Lo Sharpe alto
+veniva dal denominatore, non dal numeratore. Nel walk-forward a candidato fisso
+fa 3/8 finestre positive con delta MAR mediano −0.36, e il bootstrap sulle
+finestre concatenate dà P(delta ≤ 0) del 51%: una monetina. Dettaglio in
+`results/validation.md`, sezione «Rifacimento con N = 24». Il numero precedente
+(MAR 0.37) era comunque un difetto di misura, non della strategia — vedi
+`results/comparison.md`.
 
 Nessuno dei 15 componenti Ichimoku/Gann testati come filtro migliora il
 benchmark. Sette varianti lo battono in-sample, ma **nessuna sopravvive alla
 validazione fuori campione** (`results/validation.md`): il miglior candidato ha un
 Deflated Sharpe di **0.074** sul differenziale a parità di volatilità contro il
 benchmark, e la procedura che lo seleziona vale −0.10 di MAR fuori campione.
-Dopo **ventitré** ipotesi, il benchmark è ancora la cosa più difficile da battere.
+Dopo **ventiquattro** ipotesi — l'ultima delle quali è la strategia Pine da
+cinquantatré input che il progetto doveva validare all'inizio — il benchmark è
+ancora la cosa più difficile da battere.
 
 E il benchmark stesso, allargato a quindici strumenti, è **un risultato crypto**
 (`results/universe_extended.md`): stesso segnale e stessi parametri su un universo
@@ -85,10 +91,14 @@ Sono il motivo per cui i numeri sopra sono affidabili. Vanno mantenute.
 4. **Ogni ipotesi testata va contata.** Il conteggio non sta più a mano: è la
    lunghezza di `engine/hypotheses.CATALOGUE`, e da lì entra nel Deflated Sharpe.
    Aggiungere un'ipotesi significa aggiungere una riga a quel catalogo, e la
-   soglia si alza da sola. Con ventitré ipotesi il migliore per caso migliora
+   soglia si alza da sola. Con ventiquattro ipotesi il migliore per caso migliora
    comunque qualcosa — di quanto, lo dice `run_validation.py`.
    La ventitreesima è costata cara alle precedenti, ed è istruttivo: non è solo N
-   a salire, è la **dispersione** dei tentativi. Vale anche il contrario — un
+   a salire, è la **dispersione** dei tentativi. La ventiquattresima lo conferma
+   dal lato opposto: mediocre e in mezzo alla distribuzione, ha lasciato la soglia
+   dov'era (0.89) e il DSR di `cloud_exit` è perfino salito di un millesimo.
+   Un'ipotesi estrema costa molto alle altre anche quando è sbagliata; una
+   mediocre non costa quasi niente. Vale anche il contrario — un
    confronto **a parità di volatilità** restringe quella dispersione, e va fatto
    sempre, perché una variante che gira a tre volte la scala del benchmark ha un
    differenziale positivo per costruzione (`validation.volatility_matched`).
@@ -187,6 +197,22 @@ Non ripetere questi test senza una ragione nuova.
   Lo Sharpe che sale da 1.18 a 1.41 alzando `risk_pct` resta un fatto vero; non
   sopravvive al confronto a parità di rischio. Vedi `results/validation.md`,
   sezione «Rifacimento con N = 23».
+* **`sanyaku_v55`, la ventiquattresima ipotesi**: **falsificata.** La strategia
+  Pine intera, entrata nel catalogo dopo che il parity test aveva corretto il
+  blocco della pausa. In-sample fa MAR 0.83 e Sharpe **1.42 contro 1.39** del
+  benchmark — l'unico numero del progetto che abbia mai battuto il benchmark su
+  una metrica primaria. Non regge nessuna delle cinque prove: walk-forward fisso
+  **3/8** finestre positive con delta MAR mediano **−0.36** (`cloud_exit` faceva
+  7/8 e +0.27), k-fold purgato 3/5, differenziale grezzo **−0.86** di Sharpe
+  annuo, e a parità di volatilità **+0.05 con DSR 0.003 e PSR 0.560**. Il
+  bootstrap sulle finestre concatenate dà delta medio −0.02 e **P(delta ≤ 0) del
+  51%**.
+  La spiegazione è una sola: **gira a 0.64× la volatilità del benchmark**, e uno
+  Sharpe si alza anche abbassando il denominatore. È l'**immagine speculare di
+  `sizing_notional`**, che girava a 3.35× e aveva il differenziale grezzo più
+  alto del progetto: una correva troppo, l'altra troppo poco, e la stessa
+  correzione a parità di volatilità le uccide entrambe. Vedi
+  `results/validation.md`, sezione «Rifacimento con N = 24».
 * **Il portafoglio come leva di rendimento.** Allargare da sei a quindici
   strumenti dimezza il drawdown (8.9% → 4.1%) ma taglia il CAGR di due terzi
   (7.7% → 2.5%): il MAR **scende** a 0.61. La diversificazione riduce il rischio,
@@ -296,22 +322,28 @@ Non ripetere questi test senza una ragione nuova.
    domanda è allargare il campione — altri strumenti, o il tempo che passa — non
    un'altra statistica sugli stessi dati.
 
-6. **Validare la v5.5 come si è validato tutto il resto.** Nuova, e conseguenza
-   diretta della correzione. La v5.5 ora fa MAR 0.83 e Sharpe 1.42 contro 0.87 e
-   1.39 del benchmark, ma è un numero in-sample su una strategia sviluppata su
-   questi dati: non è mai passata dal DSR, dal walk-forward a candidato fisso, dal
-   k-fold purgato né dal bootstrap a blocchi. È l'unica cosa sul tavolo che
-   meriti quel trattamento, ed è anche l'unica strada per sapere se il progetto
-   abbia trovato qualcosa o solo riparato uno strumento.
+6. ~~Validare la v5.5 come si è validato tutto il resto~~: **chiusa, con esito
+   negativo.** Eseguita il 2026-09-15 con lo stesso identico protocollo del
+   candidato in tutte e cinque le prove — non solo il DSR, perché confrontare due
+   verdetti ottenuti con protocolli diversi non vuol dire niente.
 
-   Due avvertenze prima di farlo. Primo: **entra nel catalogo come ipotesi**, e
-   quindi alza la soglia del DSR per tutte le altre — la regola 4 non fa sconti,
-   e questa è esattamente la ventiquattresima ipotesi che l'esclusione qui sopra
-   sconsiglia di cercare. La differenza è che questa non è stata cercata: era già
-   nel repo, misurata male. Secondo: il confronto va fatto **a parità di
-   volatilità**, come per `sizing_notional`, perché la v5.5 gira a esposizione
-   57% contro 54% e drawdown 6.1% contro 8.9% — scale diverse, differenziale
-   grezzo non interpretabile.
+   | prova | `cloud_exit` | **v5.5** |
+   |---|---|---|
+   | walk-forward fisso, delta MAR mediano | +0.27, 7/8 positivi | **−0.36**, 3/8 |
+   | k-fold purgato, delta MAR mediano | +0.76, 5/5 | **+0.01**, 3/5 |
+   | DSR a parità di volatilità | 0.075 | **0.003** |
+   | PSR a parità di volatilità | 0.952 | **0.560** |
+   | bootstrap, P(delta ≤ 0) | 20-30% | **51%** |
+
+   La domanda era se il progetto avesse trovato qualcosa o solo riparato uno
+   strumento. **Ha riparato uno strumento.** Lo Sharpe 1.42 era volatilità bassa
+   (0.64× il benchmark), non vantaggio: riportato alla scala del benchmark vale
+   +0.05 di Sharpe annuo contro una soglia di 0.89.
+
+   Resta però vero, e vale più del verdetto, che il difetto è stato trovato dal
+   **parity test** e da nient'altro: né la suite, né undici anni di backtest, né
+   ventitré ipotesi lo avevano visto. È l'argomento più forte per chiudere la
+   questione 4.
 
 ## Deviazioni note del porting
 

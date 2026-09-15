@@ -11,16 +11,22 @@ viene misurato? Quattro prove, dalla più indulgente alla più severa.
    nulla che venga adattato in-sample, e il candidato è stato comunque scelto
    conoscendo tutto il periodo.
 2. **Walk-forward con selezione.** Dentro ogni finestra di training viene
-   rieseguita l'intera procedura di ricerca — ventitré varianti, si tiene la
-   migliore per MAR — e il risultato si misura sulla finestra successiva, mai
+   rieseguita l'intera procedura di ricerca — tutte le varianti del catalogo più
+   il benchmark, si tiene la migliore per MAR — e il risultato si misura sulla finestra successiva, mai
    vista. È il test della *procedura*, non del suo vincitore, ed è l'unica delle
    quattro che riproduce onestamente cosa sarebbe successo decidendo in tempo
    reale.
 3. **K-fold purgato con embargo.** Cinque blocchi, training purgato dei 200
    giorni che precedono il test (la durata massima osservata di un trade) e in
    embargo per i 40 che lo seguono.
-4. **Deflated Sharpe Ratio** su N = 22 ipotesi provate, più un bootstrap a
+4. **Deflated Sharpe Ratio** su N ipotesi provate — N è la lunghezza di
+   ``hypotheses.CATALOGUE``, non un numero scritto a mano — più un bootstrap a
    blocchi circolari per un intervallo di confidenza sul delta di MAR.
+
+Dal 2026-09-15 la **Sanyaku v5.5** riceve lo stesso identico protocollo del
+candidato in tutte e cinque le prove, non solo nel DSR: era entrata nel catalogo
+dopo la correzione della pausa, e confrontare due verdetti ottenuti con
+protocolli diversi non avrebbe voluto dire niente.
 
 Uso: python3 scripts/run_validation.py [--boot 2000]
 """
@@ -82,6 +88,10 @@ def main() -> int:
     intero = [V.Segment(start, end)]
     base_runner = H.SELECTION_POOL[H.BASE_NAME]
     cand_runner = H.SELECTION_POOL[H.CANDIDATE]
+    # la v5.5 riceve lo stesso protocollo del candidato, non solo il DSR:
+    # e' l'unico modo di confrontare i due verdetti
+    V55 = "sanyaku_v55"
+    v55_runner = H.SELECTION_POOL[V55]
 
     print(f"periodo: {start.date()} → {end.date()} | {len(universe)} asset | "
           f"un solo set di parametri | costi per asset")
@@ -99,9 +109,13 @@ def main() -> int:
     is_base = V.evaluate(universe, base_runner, intero)
     is_cand = V.evaluate(universe, cand_runner, intero)
     riga("benchmark", is_base.stats)
+    is_v55 = V.evaluate(universe, v55_runner, intero)
     riga("candidato", is_cand.stats, is_cand.stats.mar - is_base.stats.mar,
          f"{is_cand.assets_better_than(is_base)}/6 asset")
-    summary["in_sample"] = {"base": is_base.stats.as_dict(), "candidato": is_cand.stats.as_dict()}
+    riga("sanyaku v5.5", is_v55.stats, is_v55.stats.mar - is_base.stats.mar,
+         f"{is_v55.assets_better_than(is_base)}/6 asset")
+    summary["in_sample"] = {"base": is_base.stats.as_dict(), "candidato": is_cand.stats.as_dict(),
+                            "sanyaku_v55": is_v55.stats.as_dict()}
 
     # ---------------------------------------------------------------- 1
     print("\n" + "=" * 78)
@@ -110,39 +124,55 @@ def main() -> int:
     finestre = V.rolling_windows(start, end, train_years=3, test_years=1, step_years=1)
     print(f"{len(finestre)} finestre di test contigue, training di 3 anni, avanzamento annuale")
     print(f"\n{'finestra':26s} {'MAR base':>9s} {'MAR cand':>9s} {'delta':>7s} "
-          f"{'Sh base':>8s} {'Sh cand':>8s} {'asset':>6s}")
+          f"{'MAR v5.5':>9s} {'delta':>7s} {'asset':>6s}")
 
     d_mar, d_sharpe, righe_wf = [], [], []
+    d_mar_v55, d_sharpe_v55 = [], []
     for w in finestre:
         b = V.evaluate(universe, base_runner, [w.test])
         c = V.evaluate(universe, cand_runner, [w.test])
+        v = V.evaluate(universe, v55_runner, [w.test])
         dm = c.stats.mar - b.stats.mar
         ds = c.stats.sharpe - b.stats.sharpe
+        dmv = v.stats.mar - b.stats.mar
         d_mar.append(dm), d_sharpe.append(ds)
+        d_mar_v55.append(dmv), d_sharpe_v55.append(v.stats.sharpe - b.stats.sharpe)
         migliori = c.assets_better_than(b)
+        migliori_v = v.assets_better_than(b)
         print(f"{w.label:26s} {b.stats.mar:9.2f} {c.stats.mar:9.2f} {dm:+7.2f} "
-              f"{b.stats.sharpe:8.2f} {c.stats.sharpe:8.2f} {migliori:4d}/6")
+              f"{v.stats.mar:9.2f} {dmv:+7.2f} {migliori:2d}/{migliori_v}/6")
         righe_wf.append({"finestra": w.label, "base": b.stats.as_dict(),
-                         "candidato": c.stats.as_dict(), "delta_mar": dm,
-                         "delta_sharpe": ds, "asset_migliorati": migliori})
+                         "candidato": c.stats.as_dict(), "sanyaku_v55": v.stats.as_dict(),
+                         "delta_mar": dm, "delta_sharpe": ds,
+                         "delta_mar_v55": dmv, "asset_migliorati": migliori,
+                         "asset_migliorati_v55": migliori_v})
 
+    print("  (la colonna asset e' 'candidato/v5.5' su sei)")
     print("\ndistribuzione del delta sulle finestre:")
-    stampa_distribuzione("delta MAR", distribuzione(d_mar))
-    stampa_distribuzione("delta Sharpe", distribuzione(d_sharpe))
+    stampa_distribuzione("delta MAR candidato", distribuzione(d_mar))
+    stampa_distribuzione("delta Sharpe candidato", distribuzione(d_sharpe))
+    stampa_distribuzione("delta MAR v5.5", distribuzione(d_mar_v55))
+    stampa_distribuzione("delta Sharpe v5.5", distribuzione(d_sharpe_v55))
 
     test_segs = [w.test for w in finestre]
     agg_base = V.evaluate(universe, base_runner, test_segs)
     agg_cand = V.evaluate(universe, cand_runner, test_segs)
+    agg_v55 = V.evaluate(universe, v55_runner, test_segs)
     print(f"\naggregato sulle {len(test_segs)} finestre concatenate "
           f"({test_segs[0].start.date()} → {test_segs[-1].end.date()}):")
     print(TESTA)
     riga("benchmark", agg_base.stats)
     riga("candidato", agg_cand.stats, agg_cand.stats.mar - agg_base.stats.mar,
          f"{agg_cand.assets_better_than(agg_base)}/6 asset")
+    riga("sanyaku v5.5", agg_v55.stats, agg_v55.stats.mar - agg_base.stats.mar,
+         f"{agg_v55.assets_better_than(agg_base)}/6 asset")
     summary["walk_forward_fisso"] = {
         "finestre": righe_wf, "delta_mar": distribuzione(d_mar),
         "delta_sharpe": distribuzione(d_sharpe),
-        "aggregato": {"base": agg_base.stats.as_dict(), "candidato": agg_cand.stats.as_dict()},
+        "delta_mar_v55": distribuzione(d_mar_v55),
+        "delta_sharpe_v55": distribuzione(d_sharpe_v55),
+        "aggregato": {"base": agg_base.stats.as_dict(), "candidato": agg_cand.stats.as_dict(),
+                      "sanyaku_v55": agg_v55.stats.as_dict()},
     }
 
     # ---------------------------------------------------------------- 2
@@ -194,12 +224,14 @@ def main() -> int:
     print(f"{len(folds)} fold | purge {V.MAX_HOLDING_DAYS} giorni (durata massima osservata "
           f"di un trade) | embargo {V.EMBARGO_DAYS} giorni")
     print(f"\n{'fold':30s} {'MAR base':>9s} {'MAR cand':>9s} {'delta':>7s} "
-          f"{'scelta sul training':24s} {'MAR OOS':>8s}")
+          f"{'MAR v5.5':>9s} {'scelta sul training':24s} {'MAR OOS':>8s}")
 
     d_fold, d_fold_sel, diverse, righe_fold = [], [], 0, []
+    d_fold_v55 = []
     for f in folds:
         b = V.evaluate(universe, base_runner, [f.test])
         c = V.evaluate(universe, cand_runner, [f.test])
+        v = V.evaluate(universe, v55_runner, [f.test])
         scelta, _ = V.select_best(universe, H.SELECTION_POOL, list(f.train))
         # stesso fold senza purge né embargo: isola quanto pesa la contaminazione
         sporco = [V.Segment(start, f.test.start), V.Segment(f.test.end, end)]
@@ -209,22 +241,26 @@ def main() -> int:
         sel_oos = V.evaluate(universe, H.SELECTION_POOL[scelta], [f.test])
         dm = c.stats.mar - b.stats.mar
         d_fold.append(dm)
+        d_fold_v55.append(v.stats.mar - b.stats.mar)
         d_fold_sel.append(sel_oos.stats.mar - b.stats.mar)
         print(f"{f.label:30s} {b.stats.mar:9.2f} {c.stats.mar:9.2f} {dm:+7.2f} "
-              f"{scelta:24s} {sel_oos.stats.mar:8.2f}")
+              f"{v.stats.mar:9.2f} {scelta:24s} {sel_oos.stats.mar:8.2f}")
         righe_fold.append({"fold": f.label, "base": b.stats.as_dict(),
-                           "candidato": c.stats.as_dict(), "delta_mar": dm,
+                           "candidato": c.stats.as_dict(), "sanyaku_v55": v.stats.as_dict(),
+                           "delta_mar": dm, "delta_mar_v55": v.stats.mar - b.stats.mar,
                            "scelta_purgata": scelta, "scelta_non_purgata": scelta_sporca,
                            "mar_oos_scelta": sel_oos.stats.mar,
                            "train_anni": f.train_years})
 
     print("\ndistribuzione sui fold:")
     stampa_distribuzione("delta MAR (candidato − benchmark)", distribuzione(d_fold))
+    stampa_distribuzione("delta MAR (v5.5 − benchmark)", distribuzione(d_fold_v55))
     stampa_distribuzione("delta MAR (scelta − benchmark)", distribuzione(d_fold_sel))
     print(f"\n  fold in cui purge ed embargo cambiano la variante scelta: "
           f"{diverse}/{len(folds)}")
     summary["kfold_purgato"] = {
         "fold": righe_fold, "delta_mar": distribuzione(d_fold),
+        "delta_mar_v55": distribuzione(d_fold_v55),
         "delta_mar_selezione": distribuzione(d_fold_sel),
         "purge_giorni": V.MAX_HOLDING_DAYS, "embargo_giorni": V.EMBARGO_DAYS,
         "scelte_cambiate_dal_purging": diverse,
@@ -251,7 +287,8 @@ def main() -> int:
     print("\n4a) sullo Sharpe assoluto")
     print(f"{'':24s} {'SR/anno':>8s} {'soglia N':>9s} {'PSR':>7s} {'DSR':>7s}  interpretazione")
     dsr_out = {}
-    for etichetta, res in [(H.CANDIDATE, is_cand), ("donchian (non scelto)", is_base),
+    for etichetta, res in [(H.CANDIDATE, is_cand), (V55, is_v55),
+                           ("donchian (non scelto)", is_base),
                            ("exit_kijun_cross", prove["exit_kijun_cross"]),
                            ("signal_sanyaku", prove["signal_sanyaku"])]:
         ds = V.deflated_sharpe(res.returns, validi, n_trials=H.N_HYPOTHESES)
@@ -276,7 +313,7 @@ def main() -> int:
     migliore = max(sharpe_diff, key=lambda n: sharpe_diff[n] if np.isfinite(sharpe_diff[n]) else -9)
     print(f"il differenziale più alto delle {H.N_HYPOTHESES} ipotesi è {migliore}")
     print(f"\n{'':24s} {'SR/anno':>8s} {'soglia N':>9s} {'PSR':>7s} {'DSR':>7s}  interpretazione")
-    da_mostrare = dict.fromkeys([H.CANDIDATE, migliore, "exit_kijun_cross", "signal_sanyaku"])
+    da_mostrare = dict.fromkeys([H.CANDIDATE, V55, migliore, "exit_kijun_cross", "signal_sanyaku"])
     for etichetta in da_mostrare:
         ds = V.deflated_sharpe(diff[etichetta], validi_diff, n_trials=H.N_HYPOTHESES)
         print(f"{etichetta + ' − base':24s} {ds.sr_annual:8.2f} {ds.sr0_annual:9.2f} "
@@ -298,7 +335,7 @@ def main() -> int:
     print(f"\nil differenziale a parità di volatilità più alto delle "
           f"{H.N_HYPOTHESES} ipotesi è {migliore_vm}")
     print(f"\n{'':26s} {'vol/base':>9s} {'SR/anno':>8s} {'soglia N':>9s} {'PSR':>7s} {'DSR':>7s}  interpretazione")
-    for etichetta in dict.fromkeys([H.CANDIDATE, migliore_vm, migliore, "sizing_notional"]):
+    for etichetta in dict.fromkeys([H.CANDIDATE, V55, migliore_vm, migliore, "sizing_notional"]):
         ds = V.deflated_sharpe(vm[etichetta], validi_vm, n_trials=H.N_HYPOTHESES)
         rapporto = prove[etichetta].returns.std() / is_base.returns.std()
         print(f"{etichetta + ' − base':26s} {rapporto:9.2f} {ds.sr_annual:8.2f} "
@@ -321,6 +358,8 @@ def main() -> int:
     for etichetta, cand_r, base_r in [
         ("intero periodo (in-sample)", is_cand.returns, is_base.returns),
         ("finestre di test concatenate", agg_cand.returns, agg_base.returns),
+        ("v5.5, intero periodo", is_v55.returns, is_base.returns),
+        ("v5.5, finestre concatenate", agg_v55.returns, agg_base.returns),
     ]:
         for blocco in (21, 63):
             ci = V.block_bootstrap_delta(cand_r, base_r, block_bars=blocco,
