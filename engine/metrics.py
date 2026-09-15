@@ -50,11 +50,21 @@ def max_drawdown(equity: pd.Series) -> float:
     return float(((peak - equity) / peak).max())
 
 
-def compute(result: Result, initial_capital: float = 100_000.0) -> Stats:
+def compute(result: Result, initial_capital: float = 100_000.0,
+            years: float | None = None) -> Stats:
+    """Statistiche di una curva di equity.
+
+    ``years`` serve per le curve **non contigue** prodotte dalla validazione:
+    quando i segmenti di un fold purgato vengono concatenati, la distanza fra la
+    prima e l'ultima data include anche i buchi, e dedurre da lì gli anni
+    trascorsi gonfierebbe il denominatore del CAGR. Chi conosce la durata vera
+    la passa; tutti gli altri non cambiano comportamento.
+    """
     eq = result.equity
     closed = [t for t in result.trades if not t.is_open]
 
-    years = (eq.index[-1] - eq.index[0]).days / 365.25 if len(eq) > 1 else 0.0
+    if years is None:
+        years = (eq.index[-1] - eq.index[0]).days / 365.25 if len(eq) > 1 else 0.0
     total_return = eq.iloc[-1] / initial_capital
     cagr = total_return ** (1 / years) - 1 if years > 0 and total_return > 0 else float("nan")
 

@@ -8,10 +8,12 @@ perché TradingView non espone API per lo Strategy Tester.
 
 ```bash
 pip install pandas numpy pytest
-python3 -m pytest tests/ -q                      # 28 test, devono passare tutti
+python3 -m pytest tests/ -q                      # 70 test, devono passare tutti
 python3 scripts/run_benchmark.py                 # benchmark di riferimento
 python3 scripts/compare_strategies.py            # v3.2 e v5.5 contro il benchmark
 python3 scripts/run_ablation.py                  # quali componenti aggiungono valore
+python3 scripts/run_ichimoku_tests.py            # Ichimoku come segnale e come uscita
+python3 scripts/run_validation.py                # walk-forward, k-fold purgato, DSR
 python3 scripts/validate_series.py               # gate di qualità sui dati
 ```
 
@@ -31,7 +33,11 @@ asset. Nessuna delle due strategie Pine batte il benchmark, e perdono anche su
 BTC, l'asset su cui sono state sviluppate.
 
 Nessuno dei 15 componenti Ichimoku/Gann testati come filtro migliora il
-benchmark. Dettagli in `results/`.
+benchmark. Sette varianti su ventidue lo battono in-sample, ma **nessuna
+sopravvive alla validazione fuori campione** (`results/validation.md`): il
+miglior candidato ha un Deflated Sharpe di 0.025 sul differenziale contro il
+benchmark, e la procedura che lo seleziona vale −0.04 di MAR fuori campione.
+Dopo ventidue ipotesi, il benchmark è ancora la cosa più difficile da battere.
 
 ## Regole di lavoro che hanno prodotto questi risultati
 
@@ -46,12 +52,19 @@ Sono il motivo per cui i numeri sopra sono affidabili. Vanno mantenute.
    alto delle tre è la peggiore delle tre, perché il PF ignora il capitale fermo.
 3. **Un solo set di parametri su tutti gli asset.** Ottimizzare per asset
    distrugge la domanda a cui il progetto vuole rispondere.
-4. **Ogni ipotesi testata va contata.** `run_ablation.py` stampa il numero di
-   ipotesi: con quindici filtri il migliore per caso migliora comunque qualcosa.
+4. **Ogni ipotesi testata va contata.** Il conteggio non sta più a mano: è la
+   lunghezza di `engine/hypotheses.CATALOGUE`, e da lì entra nel Deflated Sharpe.
+   Aggiungere un'ipotesi significa aggiungere una riga a quel catalogo, e la
+   soglia si alza da sola. Con ventidue ipotesi il migliore per caso migliora
+   comunque qualcosa — di quanto, lo dice `run_validation.py`.
 5. **Un filtro che aiuta un solo asset è un filtro adattato a quell'asset.** Si
    riporta sempre su quanti asset su sei migliora.
 6. **Niente ri-ottimizzazione periodica dei parametri.** È la pratica che
    produce i numeri più belli e i fallimenti più rapidi.
+7. **Un vantaggio in-sample non è un risultato finché non passa la validazione.**
+   Un candidato stabile su tutti i sotto-periodi non è una conferma se è stato
+   scelto conoscendoli tutti: va validata la *procedura* di selezione, non il suo
+   vincitore. `run_validation.py` fa entrambe le cose e le tiene separate.
 
 ## Architettura
 
@@ -63,10 +76,13 @@ engine/
   costs.py        costi per asset, in percentuale (non in tick)
   data.py         caricamento con controlli bloccanti
   filters.py      componenti da innestare sul benchmark (catalogo per l'ablazione)
+  hypotheses.py   il catalogo di tutte le ipotesi provate; N_HYPOTHESES entra nel DSR
+  validation.py   walk-forward, k-fold purgato con embargo, Deflated Sharpe, bootstrap
   strategies/     donchian (benchmark), sanyaku (v5.5), confluence (v3.2)
 scripts/          runner riproducibili + estrattori dati + gate di qualità
 strategies/       i due Pine originali, invariati
-results/          benchmark_donchian.md, comparison.md, ablation.md
+results/          benchmark_donchian.md, comparison.md, ablation.md,
+                  ichimoku_tests.md, validation.md
 research/         state-of-the-art.md — ricognizione della letteratura
 data/README.md    fonti, difetti trovati, perimetro dei connector
 ```
@@ -117,27 +133,55 @@ Non ripetere questi test senza una ragione nuova.
   breakout a 55 barre implica close > massimo di 26 barre fa: è una tautologia.
 * **Gate di regime HTF**: il filtro Ichimoku più dannoso, −0.21 di MAR. È il
   cardine di entrambe le strategie Pine.
+* **`cloud_exit` come risultato del progetto**: in-sample batte il benchmark
+  (MAR 1.15 contro 0.87) ed è stabile in 7 finestre su 8 e 5 fold su 5, ma il
+  vantaggio non è distinguibile dal miglior rumore di ventidue tentativi — DSR
+  0.025, PSR 0.829, IC 95% sul delta di MAR [−0.31, +0.82]. Va descritto come
+  *non falsificato*, mai come confermato.
+* **Cercare la ventitreesima ipotesi su questi dati.** Ogni ipotesi in più alza
+  la soglia del DSR per tutte le precedenti: da N = 22 a N = 40 la soglia passa
+  da 0.85 a 0.96 di Sharpe annuo. Continuare a cercare su questo campione rende
+  più difficile, non più facile, dimostrare qualcosa.
 
 ## Questioni aperte
 
-1. ~~Ichimoku come uscita~~ e ~~Ichimoku simmetrico come segnale~~: **testati, e
-   funzionano** (`results/ichimoku_tests.md`). Tutte e sette le varianti battono
-   il benchmark. Il candidato migliore è **ingressi Donchian + uscita sulla
-   nuvola** (`cloud_exit`): MAR 1.15 contro 0.87, Sharpe 1.53, CAGR più alto *e*
-   drawdown più basso insieme, stesso numero di trade, insensibile ai costi
-   doppi. Attenzione: `ichimoku sanyaku` ha il MAR più alto (1.38) ma i guadagni
-   sono concentrati sulle crypto e perde 0.23 raddoppiando i costi.
-2. **Validazione del candidato**: walk-forward, purged k-fold con embargo,
-   Deflated Sharpe sulle 22 ipotesi testate finora. Nessun numero prodotto
-   finora è out-of-sample.
-3. **Portafoglio invece che segnale.** Il drawdown scende da 38.7% del peggior
-   asset singolo a 8.9% di portafoglio a parità di segnale. È l'unica leva che i
-   dati hanno mostrato funzionare; con 15-20 strumenti e vol targeting scende
-   ancora.
-4. **Parity test contro il Pine.** Mai eseguito. Richiede export CSV da
+1. ~~Ichimoku come uscita~~, ~~Ichimoku simmetrico come segnale~~ e
+   ~~validazione del candidato~~: **chiusi**. Le sette varianti battono il
+   benchmark in-sample (`results/ichimoku_tests.md`), ma la validazione
+   (`results/validation.md`) dice che il vantaggio non sopravvive:
+
+   | | risultato |
+   |---|---|
+   | DSR del differenziale `cloud_exit` − benchmark, N = 22 | **0.025** |
+   | PSR dello stesso differenziale, senza penalità per N | 0.829 |
+   | delta MAR della procedura di selezione, fuori campione | **−0.04** |
+   | ρ di rango fra classifica in-sample e out-of-sample | 0.14 |
+   | IC 95% sul delta di MAR, bootstrap a blocchi | **[−0.31, +0.82]** |
+
+   Il candidato *fisso* è stabile ovunque lo si misuri; la *procedura* che lo ha
+   prodotto sceglie `cloud_exit` una volta su otto e non aggiunge valore. Le due
+   affermazioni vanno tenute separate: la prima è ciò che ci si aspetta da una
+   variante scelta con il senno di poi su tutto il periodo, la seconda è il test
+   vero. `cloud_exit` resta utilizzabile — non fa mai danni — ma come ipotesi
+   **non falsificata**, non come risultato.
+
+2. **Portafoglio invece che segnale.** Il drawdown scende da 38.7% del peggior
+   asset singolo a 8.9% di portafoglio a parità di segnale. Dopo la validazione
+   è l'unica leva rimasta con un effetto più grande della sua incertezza: vale
+   più di qualunque delta fra le ventidue varianti, e non dipende da una
+   selezione. Con 15-20 strumenti e vol targeting scende ancora.
+
+3. **Parity test contro il Pine.** Mai eseguito, e ora l'unica verifica aperta
+   che non richieda di cercare un vantaggio nuovo. Richiede export CSV da
    TradingView degli stessi simboli, perché il parity ha senso solo se i due lati
    usano lo stesso feed — l'1.5% delle barre crypto differisce oltre il 2% fra
    due fonti diverse.
+
+4. **Dati fuori campione veri.** Nessun test su questo campione può più
+   distinguere un vantaggio di 0.28 di Sharpe annuo da zero: undici anni e sei
+   asset non contengono l'informazione necessaria. L'unico modo di riaprire la
+   domanda è allargare il campione — altri strumenti, o il tempo che passa — non
+   un'altra statistica sugli stessi dati.
 
 ## Deviazioni note del porting
 
