@@ -85,3 +85,31 @@ def test_il_cooldown_blocca_e1_ma_non_e4(daily):
     tutte.prepare(daily)
     passa = tutte.entry(State(i=idx, closed_trades=1, last_exit_index=idx - 2, **idx_kwargs))
     assert passa is not None and passa.tag == "E4"   # E4 entra comunque
+
+
+def test_i_filtri_rispettano_il_contratto(daily):
+    """Ogni filtro deve restituire due serie booleane allineate all'indice."""
+    from engine import filters
+
+    for nome, fn in filters.CATALOGUE.items():
+        allow_long, allow_short = fn(daily)
+        assert list(allow_long.index) == list(daily.index), nome
+        assert list(allow_short.index) == list(daily.index), nome
+        assert allow_long.dtype == bool and allow_short.dtype == bool, nome
+
+
+def test_la_pendenza_gann_1x1_non_e_raggiungibile(daily):
+    """Il prezzo diffonde come radice del tempo, la retta 1x1 cresce come il tempo.
+
+    Normalizzata in ATR per barra, la 1x1 non viene mai attraversata: e' una
+    proprieta' della scala, non del mercato. Il test fissa il fatto che rende
+    l'angolo inutilizzabile come soglia.
+    """
+    from engine import filters, indicators as ind
+
+    atr = ind.atr(daily, 14)
+    slope = ((daily["close"] - daily["close"].shift(26)) / (26 * atr)).dropna()
+    assert slope.abs().max() < 1.0
+
+    allow_long, allow_short = filters.gann_1x1(daily)
+    assert not (allow_long | allow_short).any()
