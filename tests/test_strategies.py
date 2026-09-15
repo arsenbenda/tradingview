@@ -113,3 +113,37 @@ def test_la_pendenza_gann_1x1_non_e_raggiungibile(daily):
 
     allow_long, allow_short = filters.gann_1x1(daily)
     assert not (allow_long | allow_short).any()
+
+
+def test_la_pausa_dopo_le_perdite_non_e_definitiva():
+    """La pausa da perdite consecutive deve scadere, non congelare la strategia.
+
+    Il Pine (righe 133-137) valuta la soglia alla chiusura di un trade e azzera
+    il contatore quando arma la pausa. Il porting la valutava a ogni barra senza
+    azzerare: raggiunte cinque perdite, ogni barra riarmava ``pause_until``,
+    nessun trade poteva aprirsi e quindi il contatore non tornava mai sotto la
+    soglia. La strategia restava bloccata fino a fine serie -- dal 67% al 94%
+    delle barre a seconda dell'asset, e su CORN dal 2016 in poi.
+
+    Il test fissa il fatto che rende la misura confrontabile con il Pine: dopo
+    ``pause_bars`` barre la pausa deve essere finita.
+    """
+    from engine import backtest, costs, data
+
+    serie = data.load("BTC")
+    serie = serie[serie.index >= data.DEFAULT_START]
+    strat = SanyakuV55()
+    res = backtest.run_strategy(
+        serie, strat, costs=costs.for_asset("BTC"),
+        risk_pct=0.01, initial_capital=100_000.0, max_notional_pct=0.60,
+    )
+
+    # la pausa e' armata al piu' per pause_bars barre oltre l'ultimo trade chiuso
+    assert strat.pause_until <= len(serie) - 1 + strat.pause_bars
+
+    # e la strategia resta viva: opera fino in fondo, non si spegne a meta' serie
+    ultimo = res.trades[-1].exit_date
+    assert (serie.index[-1] - ultimo).days < 400, (
+        f"ultimo trade il {ultimo.date()}, serie fino al {serie.index[-1].date()}: "
+        "la strategia si e' fermata prima della fine"
+    )

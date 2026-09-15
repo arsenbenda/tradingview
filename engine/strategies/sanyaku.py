@@ -148,6 +148,8 @@ class SanyakuV55(Strategy):
         self.zone_locked = False
         self.zone_anchor = np.nan
         self.pause_until = -10_000
+        self.seen_trades = 0
+        self.consec_losses = 0
         self.entry_type = 0
         self.entry_atr = np.nan
         self.trail_active = False
@@ -172,8 +174,17 @@ class SanyakuV55(Strategy):
         cooldown_len = self.cooldown_loss_bars if (self.adaptive_cooldown and state.last_trade_was_loss) else self.cooldown_bars
         in_cooldown = state.closed_trades > 0 and state.bars_since_exit < cooldown_len
 
-        if self.use_risk_mgmt and self.use_loss_pause and state.consecutive_losses >= self.max_consec_loss:
-            self.pause_until = i + self.pause_bars
+        # Il Pine valuta questo blocco alla chiusura di un trade, non a ogni
+        # barra, e azzera il contatore quando arma la pausa (righe 133-137 di
+        # ichimoku_sanyaku_v55.pine). Senza quel reset la condizione resta vera
+        # per sempre: ogni barra riarma pause_until, nessun trade si apre,
+        # nessuna perdita si azzera, e la strategia si blocca definitivamente.
+        if self.use_risk_mgmt and self.use_loss_pause and state.closed_trades != self.seen_trades:
+            self.seen_trades = state.closed_trades
+            self.consec_losses = self.consec_losses + 1 if state.last_trade_was_loss else 0
+            if self.consec_losses >= self.max_consec_loss:
+                self.pause_until = i + self.pause_bars
+                self.consec_losses = 0
         paused = self.use_risk_mgmt and self.use_loss_pause and i <= self.pause_until
 
         if not d["atr_pct_ok"][i] or paused:
