@@ -85,6 +85,10 @@ class Result:
     #: fine serie. In backtest quella chiusura e' corretta (serve a misurare);
     #: in avanti no, perche' la posizione e' davvero ancora aperta.
     open_position: "Trade | None" = None
+    #: livello di stop della posizione viva. Non sta in ``Trade``, che registra
+    #: com'e' andata e non dove sta lo stop adesso, ma e' la meta' della
+    #: decisione che un registro forward deve poter scrivere.
+    open_stop: float | None = None
 
     @property
     def returns(self) -> pd.Series:
@@ -328,6 +332,7 @@ def run_strategy(
     # oggetto (azzera qty, scrive exit_*), e un riferimento ne uscirebbe con la
     # quantita' a zero — cioe' una posizione aperta che sembra chiusa.
     aperta = dataclasses.replace(trades[-1]) if (trades and not st.flat) else None
+    stop_aperto = float(st.stop_level) if (aperta is not None and np.isfinite(st.stop_level)) else None
     in_attesa = pending[0] if pending is not None else None
 
     if not st.flat:
@@ -336,7 +341,7 @@ def run_strategy(
 
     return Result(equity=pd.Series(equity, index=idx), trades=trades,
                   exposure=bars_in_market / n if n else 0.0,
-                  pending=in_attesa, open_position=aperta)
+                  pending=in_attesa, open_position=aperta, open_stop=stop_aperto)
 
 
 def run(

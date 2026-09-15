@@ -121,18 +121,39 @@ def main() -> int:
     # close gonfia lo scarto di un ordine di grandezza (1.40% contro 0.19% di
     # mediana su questo export) e fa sembrare differenza di fonte quella che e'
     # solo la differenza fra due barre.
-    scarti = [abs((win["open"].asof(r["dt"]) - r["Price USD"]) / r["Price USD"] * 100)
-              for _, r in tv.iterrows()
-              if pd.notna(win["open"].asof(r["dt"])) and r["Price USD"]]
+    # lookup esatto, non `asof`: su uno strumento che non scambia tutti i giorni
+    # `asof` ricadrebbe sulla seduta precedente e misurerebbe lo scarto contro la
+    # barra sbagliata, in silenzio. Le date senza barra vanno contate, non
+    # sostituite.
+    senza_barra = 0
+    scarti = []
+    for _, r in tv.iterrows():
+        if r["dt"] in win.index and r["Price USD"]:
+            scarti.append(abs((win.loc[r["dt"], "open"] - r["Price USD"])
+                              / r["Price USD"] * 100))
+        else:
+            senza_barra += 1
+    if senza_barra:
+        print(f"\nATTENZIONE: {senza_barra} date di TradingView non hanno una barra "
+              f"nella serie: escluse dal confronto dei prezzi.")
+        esito["date_senza_barra"] = senza_barra
     if scarti:
         print(f"\nscarto |fill TradingView - open della stessa barra| su {len(scarti)} ingressi:")
         print(f"  mediana {statistics.median(scarti):.2f}%   max {max(scarti):.2f}%")
         esito["scarto_feed_pct"] = {"n": len(scarti), "mediana": statistics.median(scarti),
                                     "max": max(scarti)}
 
+    esito["provenienza"] = {
+        "export": args.xlsx.name, "serie": str(args.serie),
+        "range": [args.da, args.a], "warmup_giorni": args.warmup_giorni,
+        "barre": len(win), "prima_barra": str(win.index[0].date()),
+    }
     OUT.mkdir(exist_ok=True)
-    (OUT / "parity.json").write_text(json.dumps(esito, indent=2, default=str))
-    print("\nrisultati in results/parity.json")
+    # un file per serie: un nome solo verrebbe sovrascritto dall'ultima
+    # esecuzione, e il json committato non corrisponderebbe piu' al .md
+    nome = f"parity_{pathlib.Path(args.serie).stem}.json"
+    (OUT / nome).write_text(json.dumps(esito, indent=2, default=str))
+    print(f"\nrisultati in results/{nome}")
     return 0
 
 

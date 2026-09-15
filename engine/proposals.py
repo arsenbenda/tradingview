@@ -60,9 +60,16 @@ class Proposta:
         return dataclasses.asdict(self)
 
 
-def nuovo_id(creata_il: str, bersaglio: str, modifica: str) -> str:
-    grezzo = f"{creata_il}|{bersaglio}|{modifica}"
-    return hashlib.sha256(grezzo.encode()).hexdigest()[:12]
+def nuovo_id(chiave: str) -> str:
+    """Identità della proposta, derivata dal **problema** e da nient'altro.
+
+    Non dalla data e non dal testo dell'anomalia: il sorvegliante gira ogni
+    giorno e vedrebbe la stessa cosa con parole diverse («da 400 giorni», «da
+    401 giorni»), aprendo una proposta nuova ogni mattina. Una coda che cresce
+    da sola smette di essere letta, e una coda che non viene letta non è un
+    controllo.
+    """
+    return hashlib.sha256(chiave.encode()).hexdigest()[:12]
 
 
 def _eventi(path: pathlib.Path) -> list[dict]:
@@ -151,7 +158,7 @@ def aperte(path: pathlib.Path) -> list[dict]:
     return [v for v in stato(path).values() if v["stato"] == "aperta"]
 
 
-def da_anomalie(anomalie: list[str], *, quando: str,
+def da_anomalie(anomalie, *, quando: str,
                 origine: str = "sorvegliante") -> list[Proposta]:
     """Trasforma le anomalie in proposte *vuote*, da compilare a mano.
 
@@ -159,12 +166,13 @@ def da_anomalie(anomalie: list[str], *, quando: str,
     dire che qualcosa non torna; non sa dire cosa cambiare, e un testo generato
     che *sembra* una diagnosi è peggio di un campo lasciato in bianco, perché
     invita ad accettarlo senza guardarci.
+
+    L'id viene da ``Anomalia.chiave``, che resta stabile finché il problema
+    resta: la stessa anomalia ripetuta per giorni produce **una** proposta.
     """
-    out = []
-    for a in anomalie:
-        bersaglio = a.split(":")[0].strip()
-        p = Proposta(id=nuovo_id(quando, bersaglio, a), creata_il=quando,
-                     origine=origine, innesco=a, bersaglio=bersaglio,
-                     modifica="(da compilare)", motivo="(da compilare)")
-        out.append(p)
-    return out
+    return [
+        Proposta(id=nuovo_id(a.chiave), creata_il=quando, origine=origine,
+                 innesco=a.testo, bersaglio=a.asset or a.tipo,
+                 modifica="(da compilare)", motivo="(da compilare)")
+        for a in anomalie
+    ]

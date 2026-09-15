@@ -19,7 +19,12 @@ motore sia coerente con sé stesso, non che sia coerente con TradingView.
 | configurazione | nostri ingressi | esatti | entro 2 giorni | nostri in più |
 |---|---|---|---|---|
 | default del Pine | 39 | 12/23 | 15/23 | 24 |
-| **preset «Conservative»** | **24** | **18/23** | **20/23** | **5** |
+| **preset «Conservative»** | **25** | **18/23** | **20/23** | **6** |
+
+*(Tutte le righe di questo documento sono misurate con `run_parity.py` dopo la
+correzione del warmup descritta più sotto. Una versione precedente riportava 24
+ingressi e 5 in più, misurati con l'harness che partiva a indicatori freddi:
+numeri di uno strumento diverso, non confrontabili con questi.)*
 
 TradingView ne apre 23. **Il residuo che sembrava un difetto di porting era un
 confronto fra due configurazioni diverse.**
@@ -69,7 +74,7 @@ sembrava un difetto.
 ## Il residuo: reale, indipendente dal feed, non spiegato
 
 Dopo la correzione della configurazione restano **3 ingressi di TradingView che
-non produciamo** e 5-7 nostri che TradingView non ha. Ho proposto tre
+non produciamo** e 6-7 nostri che TradingView non ha. Ho proposto tre
 spiegazioni e **le prime due sono state falsificate dalla misura**. Le lascio
 scritte perché il modo in cui sono cadute è l'informazione utile.
 
@@ -81,10 +86,14 @@ scaricando Binance. Scaricata la serie BTCUSDT dall'archivio ufficiale
 (`data/raw/BTCUSDT_1d_binance.csv`, 3.316 barre dal 2017-08-17, nessun buco,
 gate di qualità superato) e rifatto il confronto:
 
-| feed | esatti | entro 2 giorni | nostri in più |
-|---|---|---|---|
-| Alpha Vantage | **18/23** | 20/23 | 5 |
-| Binance | 17/23 | 20/23 | 6 |
+| feed | nostri ingressi | esatti | entro 2 giorni | nostri in più |
+|---|---|---|---|---|
+| Alpha Vantage | 25 | **18/23** | 20/23 | 6 |
+| Binance | 26 | 17/23 | 20/23 | 7 |
+
+Le due righe sono misurate con lo stesso harness. Una versione precedente le
+confrontava misurate su versioni diverse — esattamente l'errore che questo
+documento denuncia due sezioni più su, commesso di nuovo mentre lo scriveva.
 
 **Passare al venue esatto che TradingView dichiara non chiude il residuo — lo
 peggiora di uno.** E i tre ingressi scoperti sono **gli stessi su entrambi i

@@ -80,9 +80,15 @@ def config_fingerprint(strategy: backtest.Strategy, **esecuzione: Any) -> str:
 
 
 def data_fingerprint(df: pd.DataFrame) -> str:
-    """Impronta delle barre usate. Se la storia viene riscritta, si vede."""
-    ultime = df.tail(200)
-    testo = ultime.to_csv(float_format="%.8f")
+    """Impronta di **tutte** le barre usate. Se la storia viene riscritta, si vede.
+
+    Copriva solo le ultime 200 barre, il che lasciava invisibile proprio il caso
+    che conta: un fornitore che rettifica una barra vecchia. La decisione dipende
+    da tutta la serie — Ichimoku guarda indietro 52 barre e il motore ricalcola
+    da capo ogni giorno — quindi l'impronta deve coprire tutto ciò che la
+    decisione ha letto, non una finestra scelta per comodità.
+    """
+    testo = df.to_csv(float_format="%.8f")
     return hashlib.sha256(testo.encode()).hexdigest()[:16]
 
 
@@ -92,10 +98,15 @@ class Decision:
 
     data: str               # la barra alla cui chiusura si decide
     asset: str
-    azione: str             # "apri" | "chiudi" | "tieni" | "fermo"
+    azione: str             # "apri" | "chiudi" | "tieni" | "fermo" | "chiudi+apri"
     direzione: int          # +1 long, -1 short, 0 nessuna posizione
     close: float            # chiusura della barra di decisione
-    stop: float | None      # livello di stop, se c'è una posizione o un'apertura
+    stop: float | None      # livello di stop della posizione viva, se c'è
+    #: distanza di stop decisa per un'apertura. Il *livello* non è scrivibile
+    #: oggi: il motore lo ancora al prezzo di fill, che è l'apertura di domani e
+    #: non esiste ancora. Registrare la distanza è l'unica cosa onesta, e basta
+    #: a ricostruire il livello quando il fill sarà noto.
+    stop_distance: float | None
     quantita: float | None
     tag: str                # quale meccanismo ha deciso (E1..E5, canale, ...)
     config: str             # impronta della configurazione
@@ -120,35 +131,40 @@ def decide(asset: str, df: pd.DataFrame, strategy: backtest.Strategy,
     cfg = config_fingerprint(strategy, **{k: v for k, v in esecuzione.items()
                                           if k != "costs"} | {"costs": str(esecuzione.get("costs"))})
 
-    if res.pending is not None:
-        p = res.pending
-        return Decision(data=str(ultima.date()), asset=asset, azione="apri",
-                        direzione=p.direction, close=float(df["close"].iloc[-1]),
-                        stop=None, quantita=None, tag=p.tag, config=cfg,
-                        dati=data_fingerprint(df),
-                        esecuzione_attesa="apertura successiva")
+    comuni = dict(data=str(ultima.date()), asset=asset,
+                  close=float(df["close"].iloc[-1]), config=cfg,
+                  dati=data_fingerprint(df))
 
-    aperta = res.open_position
-    if aperta is not None:
-        return Decision(data=str(ultima.date()), asset=asset, azione="tieni",
-                        direzione=aperta.direction, close=float(df["close"].iloc[-1]),
-                        stop=None, quantita=float(aperta.qty), tag=aperta.tag,
-                        config=cfg, dati=data_fingerprint(df),
-                        esecuzione_attesa="nessuna")
-
+    # Un'uscita e un'apertura possono cadere sulla **stessa** barra. Scegliere
+    # una delle due perderebbe l'altra per sempre, perché la chiave (data, asset)
+    # viene consumata: vanno scritte insieme.
     chiusi_oggi = [t for t in res.trades
                    if t.exit_date is not None and pd.Timestamp(t.exit_date) == ultima
                    and t.exit_reason != "fine serie"]
+
+    if res.pending is not None:
+        p = res.pending
+        tag = f"{chiusi_oggi[-1].exit_reason}→{p.tag}" if chiusi_oggi else p.tag
+        return Decision(**comuni, azione="chiudi+apri" if chiusi_oggi else "apri",
+                        direzione=p.direction, stop=None,
+                        stop_distance=float(p.stop_distance), quantita=None,
+                        tag=tag, esecuzione_attesa="apertura successiva")
+
+    aperta = res.open_position
+    if aperta is not None:
+        return Decision(**comuni, azione="tieni", direzione=aperta.direction,
+                        stop=res.open_stop, stop_distance=None,
+                        quantita=float(aperta.qty), tag=aperta.tag,
+                        esecuzione_attesa="nessuna")
+
     if chiusi_oggi:
         t = chiusi_oggi[-1]
-        return Decision(data=str(ultima.date()), asset=asset, azione="chiudi",
-                        direzione=0, close=float(df["close"].iloc[-1]), stop=None,
-                        quantita=None, tag=t.exit_reason, config=cfg,
-                        dati=data_fingerprint(df), esecuzione_attesa="nessuna")
+        return Decision(**comuni, azione="chiudi", direzione=0, stop=None,
+                        stop_distance=None, quantita=None, tag=t.exit_reason,
+                        esecuzione_attesa="nessuna")
 
-    return Decision(data=str(ultima.date()), asset=asset, azione="fermo", direzione=0,
-                    close=float(df["close"].iloc[-1]), stop=None, quantita=None,
-                    tag="", config=cfg, dati=data_fingerprint(df),
+    return Decision(**comuni, azione="fermo", direzione=0, stop=None,
+                    stop_distance=None, quantita=None, tag="",
                     esecuzione_attesa="nessuna")
 
 
@@ -196,7 +212,27 @@ def append(path: pathlib.Path, decisioni: list[Decision]) -> int:
 
 # ---------------------------------------------------------------- sorveglianza
 
-def anomalie(righe: list[dict], *, silenzio_massimo_giorni: int = 90) -> list[str]:
+@dataclass(frozen=True)
+class Anomalia:
+    """Una condizione che merita un'occhiata umana.
+
+    ``chiave`` identifica **il problema**, non la sua descrizione di oggi: resta
+    identica finché il problema resta, mentre ``testo`` cambia ogni giorno
+    («da 400 giorni», «da 401 giorni»). Serve alla coda delle proposte, che
+    altrimenti aprirebbe una proposta nuova ogni giorno per la stessa cosa e
+    diventerebbe illeggibile nel giro di una settimana.
+    """
+
+    chiave: str
+    asset: str
+    tipo: str
+    testo: str
+
+    def __str__(self) -> str:
+        return self.testo
+
+
+def anomalie(righe: list[dict], *, silenzio_massimo_giorni: int = 90) -> list[Anomalia]:
     """Condizioni che meritano un'occhiata umana. Nessuna cambia una decisione.
 
     Sono di sola lettura per costruzione: dicono *guarda qui*, non *fai questo*.
@@ -208,7 +244,7 @@ def anomalie(righe: list[dict], *, silenzio_massimo_giorni: int = 90) -> list[st
     operare su CORN nel 2016 e su BTC nel 2018, e nessuno se n'era accorto per
     undici anni di backtest, ventiquattro ipotesi e novantotto test.
     """
-    out: list[str] = []
+    out: list[Anomalia] = []
     if not righe:
         return out
 
@@ -218,7 +254,7 @@ def anomalie(righe: list[dict], *, silenzio_massimo_giorni: int = 90) -> list[st
 
     for asset, g in df.groupby("asset"):
         g = g.sort_values("data")
-        attivi = g[g["azione"].isin(["apri", "tieni", "chiudi"])]
+        attivi = g[g["azione"].isin(["apri", "tieni", "chiudi", "chiudi+apri"])]
         if attivi.empty:
             silenzio = (ultimo_giorno - g["data"].min()).days
             quando = "dall'inizio del registro"
@@ -226,17 +262,23 @@ def anomalie(righe: list[dict], *, silenzio_massimo_giorni: int = 90) -> list[st
             silenzio = (ultimo_giorno - attivi["data"].max()).days
             quando = f"dal {attivi['data'].max().date()}"
         if silenzio > silenzio_massimo_giorni:
-            out.append(f"{asset}: nessuna attività da {silenzio} giorni ({quando}). "
-                       f"Verificare che il silenzio sia una scelta e non un blocco.")
+            out.append(Anomalia(
+                chiave=f"silenzio:{asset}", asset=asset, tipo="silenzio",
+                testo=f"{asset}: nessuna attività da {silenzio} giorni ({quando}). "
+                      f"Verificare che il silenzio sia una scelta e non un blocco."))
 
         impronte = g["config"].unique()
         if len(impronte) > 1:
-            out.append(f"{asset}: la configurazione è cambiata {len(impronte) - 1} volta/e "
-                       f"nel registro. La regola 6 vieta la ri-ottimizzazione periodica: "
-                       f"le righe con impronte diverse non sono confrontabili fra loro.")
+            out.append(Anomalia(
+                chiave=f"config:{asset}", asset=asset, tipo="configurazione",
+                testo=f"{asset}: la configurazione è cambiata {len(impronte) - 1} volta/e "
+                      f"nel registro. La regola 6 vieta la ri-ottimizzazione periodica: "
+                      f"le righe con impronte diverse non sono confrontabili fra loro."))
 
     scarto = (pd.Timestamp.now().normalize() - ultimo_giorno).days
     if scarto > 5:
-        out.append(f"registro fermo da {scarto} giorni (ultima riga {ultimo_giorno.date()}): "
-                   f"il processo che lo alimenta potrebbe non girare più.")
+        out.append(Anomalia(
+            chiave="registro:fermo", asset="", tipo="registro",
+            testo=f"registro fermo da {scarto} giorni (ultima riga {ultimo_giorno.date()}): "
+                  f"il processo che lo alimenta potrebbe non girare più."))
     return out

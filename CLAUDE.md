@@ -320,7 +320,7 @@ Non ripetere questi test senza una ragione nuova.
    | configurazione | nostri ingressi | esatti | entro 2 giorni |
    |---|---|---|---|
    | default del Pine | 39 | 12/23 | 15/23 |
-   | **preset «Conservative»** | **24** | **18/23** | **20/23** |
+   | **preset «Conservative»** | **25** | **18/23** | **20/23** |
 
    Il residuo «39 ingressi contro 23» **non era un difetto di porting**: l'export
    si chiama «Conservative» perché è un *preset*, e sei input differiscono dai
@@ -336,7 +336,7 @@ Non ripetere questi test senza una ragione nuova.
    **Il residuo resta, ed è indipendente dal feed.** Ho proposto tre spiegazioni e
    le prime due sono state falsificate dalla misura. Scaricata la serie Binance
    ufficiale (`data/raw/BTCUSDT_1d_binance.csv`, 3.316 barre dal 2017-08-17, gate
-   superato) e rifatto il confronto: **17/23 contro i 18/23 di Alpha Vantage** —
+   superato) e rifatto il confronto: **17/23 contro i 18/23 di Alpha Vantage**, a parità di harness —
    il venue esatto che TradingView dichiara non chiude il residuo, lo peggiora di
    uno. I tre ingressi scoperti sono **gli stessi su entrambi i feed**. Anche il
    warmup degli indicatori è stato escluso (era un difetto vero dell'harness,

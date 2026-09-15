@@ -140,10 +140,16 @@ def test_la_pausa_dopo_le_perdite_non_e_definitiva():
         risk_pct=0.01, initial_capital=100_000.0, max_notional_pct=0.60,
     )
 
-    # la pausa e' armata al piu' per pause_bars barre oltre l'ultimo trade chiuso
-    assert strat.pause_until <= len(serie) - 1 + strat.pause_bars
+    # Nessun buco enorme fra un trade e il successivo. E' la misura che cattura
+    # il congelamento: con il bug la pausa si riarmava a ogni barra e apriva un
+    # vuoto di otto anni. L'asserzione precedente (pause_until <= ultima barra +
+    # pause_bars) era vera *anche con il bug*, perche' il riarmo la teneva
+    # comunque dentro quel limite: passava senza misurare niente.
+    ingressi = [t.entry_date for t in res.trades]
+    buchi = [(b - a).days for a, b in zip(ingressi, ingressi[1:])]
+    assert max(buchi) < 500, f"buco di {max(buchi)} giorni fra due trade"
 
-    # e la strategia resta viva: opera fino in fondo, non si spegne a meta' serie
+    # e la strategia resta viva fino in fondo, non si spegne a meta' serie
     ultimo = res.trades[-1].exit_date
     assert (serie.index[-1] - ultimo).days < 400, (
         f"ultimo trade il {ultimo.date()}, serie fino al {serie.index[-1].date()}: "
@@ -164,8 +170,9 @@ def test_il_registro_forward_e_append_only(tmp_path):
 
     reg = tmp_path / "decisioni.jsonl"
     d = forward.Decision(data="2026-09-14", asset="BTC", azione="apri", direzione=1,
-                         close=100.0, stop=None, quantita=None, tag="L",
-                         config="abc", dati="xyz", esecuzione_attesa="apertura successiva")
+                         close=100.0, stop=None, stop_distance=4.0, quantita=None,
+                         tag="L", config="abc", dati="xyz",
+                         esecuzione_attesa="apertura successiva")
 
     assert forward.append(reg, [d]) == 1
     assert forward.append(reg, [d]) == 0          # identica: no-op
@@ -191,18 +198,36 @@ def test_il_registro_forward_riproduce_il_passato_giorno_per_giorno(tmp_path):
     serie = serie[serie.index >= data.DEFAULT_START]
     reg = tmp_path / "decisioni.jsonl"
 
-    for fine in range(len(serie) - 30, len(serie)):
-        parziale = serie.iloc[: fine + 1]
-        d = forward.decide("BTC", parziale, SanyakuV55(),
-                           costs=costs.for_asset("BTC"), risk_pct=0.01,
-                           initial_capital=100_000.0, max_notional_pct=0.60)
-        forward.append(reg, [d])       # solleva se una riga vecchia cambiasse
+    def decidi(fino_a: int):
+        return forward.decide("BTC", serie.iloc[: fino_a + 1], SanyakuV55(),
+                              costs=costs.for_asset("BTC"), risk_pct=0.01,
+                              initial_capital=100_000.0, max_notional_pct=0.60)
+
+    giorni = range(len(serie) - 30, len(serie))
+    for fine in giorni:
+        forward.append(reg, [decidi(fine)])
 
     righe = forward.load(reg)
     assert len(righe) == 30
     assert [r["data"] for r in righe] == sorted(r["data"] for r in righe)
-    # una sola configurazione per tutte le righe: nessuna ri-ottimizzazione
-    assert len({r["config"] for r in righe}) == 1
+    assert len({r["config"] for r in righe}) == 1   # nessuna ri-ottimizzazione
+
+    # Il punto del test: **rifare gli stessi giorni**. Senza questo passaggio
+    # ogni iterazione scriveva una data nuova, il ramo di conflitto di `append`
+    # non veniva mai raggiunto, e una regressione di lookahead sarebbe passata
+    # inosservata. Qui ogni riga viene ricalcolata e riconfrontata: se una
+    # cambiasse, `append` solleverebbe.
+    for fine in giorni:
+        assert forward.append(reg, [decidi(fine)]) == 0
+    assert len(forward.load(reg)) == 30
+
+    # e una riga non deve dipendere da quanto e' lunga la serie che la contiene:
+    # calcolata due volte da basi diverse deve venire identica
+    corta = serie.iloc[: len(serie) - 5]
+    da_corta = forward.decide("BTC", corta, SanyakuV55(), costs=costs.for_asset("BTC"),
+                              risk_pct=0.01, initial_capital=100_000.0,
+                              max_notional_pct=0.60)
+    assert da_corta.as_dict() == decidi(len(serie) - 6).as_dict()
 
 
 def test_il_sorvegliante_vede_il_silenzio_e_il_cambio_di_configurazione():
@@ -221,15 +246,26 @@ def test_il_sorvegliante_vede_il_silenzio_e_il_cambio_di_configurazione():
 
     muto = [riga("2026-01-05", "apri")] + [riga(f"2026-0{m}-05", "fermo") for m in range(2, 10)]
     problemi = forward.anomalie(muto, silenzio_massimo_giorni=90)
-    assert any("nessuna attività" in p for p in problemi)
+    assert [a.tipo for a in problemi if a.tipo == "silenzio"] == ["silenzio"]
 
     cambiato = [riga("2026-09-01", "apri", "abc"), riga("2026-09-02", "tieni", "DIVERSA")]
-    problemi = forward.anomalie(cambiato)
-    assert any("configurazione è cambiata" in p for p in problemi)
+    assert any(a.tipo == "configurazione" for a in forward.anomalie(cambiato))
 
     sano = [riga("2026-09-13", "apri"), riga("2026-09-14", "tieni")]
-    assert not any("nessuna attività" in p or "configurazione" in p
-                   for p in forward.anomalie(sano))
+    assert not [a for a in forward.anomalie(sano)
+                if a.tipo in ("silenzio", "configurazione")]
+
+    # la chiave non deve muoversi mentre il testo cambia giorno per giorno:
+    # e' quello che impedisce alla coda di riempirsi di copie
+    piu_muto = muto + [riga("2026-10-05", "fermo"), riga("2026-11-05", "fermo")]
+    oggi = [a.chiave for a in problemi if a.tipo == "silenzio"]
+    domani = [a.chiave for a in forward.anomalie(piu_muto, silenzio_massimo_giorni=90)
+              if a.tipo == "silenzio"]
+    assert oggi == domani
+    testi = {next(a.testo for a in problemi if a.tipo == "silenzio"),
+             next(a.testo for a in forward.anomalie(piu_muto, silenzio_massimo_giorni=90)
+                  if a.tipo == "silenzio")}
+    assert len(testi) == 2, "il testo deve cambiare, la chiave no"
 
 
 def test_la_posizione_aperta_a_fine_serie_non_esce_con_quantita_zero(daily):
@@ -318,9 +354,23 @@ def test_le_proposte_dalle_anomalie_nascono_vuote(tmp_path):
     """
     from engine import proposals
 
-    proposte = proposals.da_anomalie(["CORN: nessuna attività da 400 giorni (dal 2016-05-04)."],
-                                     quando="2026-09-15")
+    from engine import forward
+
+    def anomalia(giorni):
+        return forward.Anomalia(chiave="silenzio:CORN", asset="CORN", tipo="silenzio",
+                                testo=f"CORN: nessuna attività da {giorni} giorni.")
+
+    proposte = proposals.da_anomalie([anomalia(400)], quando="2026-09-15")
     assert len(proposte) == 1
     assert proposte[0].modifica == "(da compilare)"
     assert proposte[0].motivo == "(da compilare)"
     assert "CORN" in proposte[0].innesco
+
+    # la stessa anomalia, giorno dopo giorno, deve produrre UNA proposta.
+    # L'id veniva dalla data e dal testo, che contiene un contatore crescente:
+    # la coda si riempiva di copie e smetteva di essere leggibile.
+    coda = tmp_path / "ripetute.jsonl"
+    for giorno, g in [("2026-09-15", 400), ("2026-09-16", 401), ("2026-09-17", 402)]:
+        for p in proposals.da_anomalie([anomalia(g)], quando=giorno):
+            proposals.proponi(coda, p)
+    assert len(proposals.aperte(coda)) == 1
