@@ -301,20 +301,37 @@ Non ripetere questi test senza una ragione nuova.
    Il costo della prova è registrato: la soglia del DSR è salita per tutte le
    ventidue ipotesi precedenti.
 
-4. **Parity test contro il Pine.** *Eseguito parzialmente il 2026-09-15, e ha
-   già pagato.* Confronto della lista trade dello Strategy Tester su
-   BINANCE:BTCUSD 2020-2026 contro il motore: ha trovato il blocco della pausa
-   della v5.5, che nessun altro controllo aveva visto. Corretto quello, le date
-   di ingresso coincidenti passano da 5/23 a **12/23 esatte** e 15/23 entro due
-   giorni.
+4. **Parity test contro il Pine.** *Chiuso per quanto questi dati permettano*
+   (`results/parity.md`, `scripts/run_parity.py`). Ha pagato due volte: ha trovato
+   il blocco della pausa, che nessun altro controllo aveva visto, e poi ha smentito
+   la mia stessa diagnosi del residuo.
 
-   **Resta aperto il residuo**, ed è sostanziale: sulla stessa finestra il motore
-   apre 39 ingressi contro i 23 di TradingView. Otto ingressi di TradingView non
-   hanno corrispondenza entro due giorni. Non si può dire se sia il feed
-   (Alpha Vantage contro Binance) o un'altra divergenza di porting finché i due
-   lati non girano sulle stesse barre: serve l'export OHLCV, non solo la lista
-   trade. **Aprire più posizioni del Pine è la direzione pericolosa** — significa
-   che manca una condizione di blocco, non che ne abbiamo una in più.
+   | configurazione | nostri ingressi | esatti | entro 2 giorni |
+   |---|---|---|---|
+   | default del Pine | 39 | 12/23 | 15/23 |
+   | **preset «Conservative»** | **24** | **18/23** | **20/23** |
+
+   Il residuo «39 ingressi contro 23» **non era un difetto di porting**: l'export
+   si chiama «Conservative» perché è un *preset*, e sei input differiscono dai
+   default, due dei quali spengono Entry 3 ed Entry 5. A default i nostri E1
+   coincidono 10/10 ed E2 1/1, mentre E3 (20 ingressi) ed E5 (2) non coincidono
+   **mai** — perché in quell'esecuzione non esistevano.
+
+   **La regola che ne esce vale per ogni parity futuro: leggere il foglio
+   `Properties` dell'export e costruire la strategia con quei valori, prima di
+   confrontare qualunque cosa.** Il quinto foglio contiene ogni input usato; i
+   primi quattro no, e da soli portano a una conclusione sbagliata.
+
+   Quel che resta — 3 ingressi TV scoperti, 5 nostri in più — è il feed: lo scarto
+   Alpha Vantage / Binance sulle 23 date ha mediana +0.20% ma escursione da −3.75%
+   a +5.63%, e i nostri cinque in più sono gli stessi eventi su una barra diversa.
+   **Per passare da «nessuna divergenza visibile» a «nessuna divergenza» serve
+   l'export OHLCV**: con due feed diversi 18/23 è il massimo ottenibile.
+
+   Conseguenza da non perdere: il catalogo valida la v5.5 **a default**, mentre il
+   preset è una strategia diversa e non validata. Se un giorno si dovesse operare,
+   configurazione eseguita e configurazione validata devono essere lo stesso
+   oggetto — oggi sarebbero due.
 
 5. **Dati fuori campione veri.** Nessun test su questo campione può più
    distinguere un vantaggio di 0.28 di Sharpe annuo da zero: undici anni e sei
