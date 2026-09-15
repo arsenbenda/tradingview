@@ -37,7 +37,8 @@ CAPITAL = 100_000.0
 OUT = pathlib.Path(__file__).resolve().parent.parent / "results"
 
 
-def run_scenario(universe: dict[str, pd.DataFrame], *, allow_short: bool, cost_mult: float):
+def run_scenario(universe: dict[str, pd.DataFrame], *, allow_short: bool, cost_mult: float,
+                 risk_pct: float = 0.01):
     results = {}
     for name, df in universe.items():
         sig = donchian.signals(df, allow_short=allow_short)
@@ -49,7 +50,7 @@ def run_scenario(universe: dict[str, pd.DataFrame], *, allow_short: bool, cost_m
             exit_short=sig["exit_short"],
             stop_distance=sig["stop_distance"],
             costs=cost_table.for_asset(name, cost_mult),
-            risk_pct=0.01,
+            risk_pct=risk_pct,
             initial_capital=CAPITAL,
         )
     return results
@@ -76,6 +77,11 @@ def main() -> int:
                     help="core: i sei su cui sono stati prodotti i risultati pubblicati; "
                          "extended: i quindici di data/universe_declaration.md; "
                          "no-crypto: i quindici senza BTC ed ETH")
+    ap.add_argument("--risk", type=float, default=1.0,
+                    help="rischio per trade in percentuale del capitale (default 1.0, "
+                         "il valore a cui e' stato misurato tutto il progetto). Il MAR "
+                         "NON e' invariante rispetto a questo numero: vedi la sezione "
+                         "sulla leva in results/universe_extended.md")
     ap.add_argument("--start", default=data.DEFAULT_START,
                     help="limita tutte le serie da questa data (default: il periodo "
                          "comune dell'universo; usare --start 1900-01-01 per la storia piena)")
@@ -90,7 +96,7 @@ def main() -> int:
     print(f"universo: {', '.join(universe)}")
     print(f"periodo comune: {start.date()} -> {end.date()}")
     print(f"parametri Donchian: ingresso {donchian.ENTRY_LEN}, uscita {donchian.EXIT_LEN}, "
-          f"stop {donchian.STOP_ATR}xATR({donchian.ATR_LEN}), rischio 1%/trade — identici su tutti gli asset")
+          f"stop {donchian.STOP_ATR}xATR({donchian.ATR_LEN}), rischio {args.risk:g}%/trade — identici su tutti gli asset")
 
     scenarios = {
         "LONG/SHORT — costi stimati": dict(allow_short=True, cost_mult=1.0),
@@ -100,7 +106,7 @@ def main() -> int:
 
     summary = {}
     for label, kwargs in scenarios.items():
-        results = run_scenario(universe, **kwargs)
+        results = run_scenario(universe, risk_pct=args.risk / 100.0, **kwargs)
         rows = [(n, metrics.compute(r, CAPITAL)) for n, r in results.items()]
         pf_eq = metrics.portfolio_equity(results, CAPITAL)
         pf_stats = metrics.compute(backtest.Result(equity=pf_eq, trades=[t for r in results.values() for t in r.trades],
@@ -119,6 +125,8 @@ def main() -> int:
     # stesso file, il prossimo che lo legge crederebbe di leggere il periodo comune
     if args.start != data.DEFAULT_START:
         nome_file = nome_file.replace(".json", f"_da{args.start}.json")
+    if args.risk != 1.0:
+        nome_file = nome_file.replace(".json", f"_rischio{args.risk:g}.json")
     (OUT / nome_file).write_text(json.dumps(summary, indent=2, default=float))
     print(f"\nrisultati salvati in results/{nome_file}")
     return 0

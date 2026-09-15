@@ -84,12 +84,15 @@ vantaggio aggiunto diluisce quelli che ce l'hanno: il contributo di BTC ed ETH
 passa da 2/6 a 2/15 del capitale, e il rendimento crolla in proporzione mentre il
 drawdown scende solo della radice di quanto sarebbe servito.
 
-**La leva non lo risolve, e va detto perché la tentazione è immediata.** Il MAR è
-invariante di scala: raddoppiare l'esposizione raddoppia CAGR *e* drawdown e
-lascia il rapporto dov'era. Un portafoglio con MAR 0.61 leverato resta un
-portafoglio con MAR 0.61. Il vol targeting citato fra le questioni aperte non può
-recuperare questi 0.26 di MAR — può solo spostare il punto di lavoro lungo la
-stessa retta.
+**La leva risolve più di quanto questa sezione diceva — correzione del
+2026-09-15.** La versione precedente affermava che il MAR è invariante di scala,
+che raddoppiare l'esposizione raddoppia CAGR *e* drawdown, e che un portafoglio a
+MAR 0.61 leverato resta a 0.61. **È falso, ed è stato misurato falso.** Vedi la
+sezione "La leva, e perché il confronto a rischio 1% non era alla pari" più sotto:
+il MAR sale con la dimensione della posizione fino a un massimo e poi ridiscende.
+Quel che resta vero è la frase che precede — il portafoglio non fabbrica
+rendimento — ma la leva non è neutra come qui si diceva, e il confronto fra sei e
+quindici a rischio fisso 1% non era un confronto alla pari.
 
 **Pesare di più gli strumenti che funzionano è selezione.** È l'unica cosa che
 alzerebbe il MAR, ed è esattamente ciò che il progetto ha passato ventidue
@@ -156,6 +159,86 @@ Questo non falsifica il trend following — vedi il primo dei limiti qui sotto, 
 periodo è uno solo e storicamente ostile fuori dalle crypto. Falsifica l'idea che
 questo progetto abbia mai misurato un trend follower multi-asset.
 
+## La leva, e perché il confronto a rischio 1% non era alla pari
+
+Misurato il 2026-09-15 con `scripts/run_benchmark.py --risk`, aggiunto per questo.
+Nasce da un'obiezione giusta: se una strategia lascia il capitale fermo, il modo
+di usarlo è alzare la dimensione della posizione. La risposta che questo documento
+dava — "il MAR è invariante di scala" — **era sbagliata.**
+
+MAR di portafoglio al variare del rischio per trade, solo long, stessi segnali:
+
+| rischio/trade | sei | quindici | tredici no-crypto |
+|---|---|---|---|
+| 1% *(tutti i risultati pubblicati)* | 0.89 | 0.74 | 0.17 |
+| 2% | 1.29 | 1.08 | 0.23 |
+| **4%** | **1.50** | **1.45** | **0.27** |
+| 8% | 1.50 | 1.38 | 0.23 |
+| 16% e oltre | 1.44 | 1.32 | 0.22 |
+
+Il MAR non è invariante: sale, ha un massimo intorno al 4-8% di rischio per
+trade, poi ridiscende. È la curva della *optimal f*, e ignorarla era un errore.
+
+**Perché sale.** Con sizing a frazione fissa, una sequenza di perdite consuma il
+capitale geometricamente — `(1−r)^n`, non `n·r` — quindi il drawdown *in
+percentuale* cresce meno che proporzionalmente al rischio, mentre il rendimento
+composto cresce più che proporzionalmente. Il rapporto fra i due deve salire. Non
+è un vantaggio che appare dal nulla: è che misurare numeratore e denominatore in
+percentuale invece che in logaritmi fa sembrare la leva migliore di quanto sia.
+**Il MAR lusinga la leva**, e due MAR misurati a rischio diverso non sono
+confrontabili.
+
+**Perché satura.** Oltre il 16% la curva si ferma: `backtest.run` limita la
+posizione a `st.cash * max_notional_pct / fill`, con `max_notional_pct = 1.0`.
+Cioè niente margine — non si può investire più del capitale. La saturazione è il
+conto in banca, non una proprietà del segnale.
+
+### Cosa cambia, e cosa no
+
+**Cambia il verdetto su sei contro quindici.** A rischio 1% il divario è 0.89
+contro 0.74; a rischio 4% è 1.50 contro 1.45, e i quindici lo ottengono con un
+drawdown del 5.9% contro il 14.2% dei sei. Il confronto pubblicato metteva i due
+universi sullo stesso rischio nominale, che non è lo stesso punto della curva:
+i quindici, avendo drawdown molto più basso, erano sottodimensionati. Il divario
+non si inverte, ma da 0.15 scende a 0.05.
+
+**Non cambia il verdetto sulle due Pine.** A parità di drawdown tollerato (20%,
+scalando il rischio di ognuna finché non ci arriva), sui sei:
+
+| | rischio | CAGR | maxDD |
+|---|---|---|---|
+| benchmark long/short | 7.8% | **29.2%** | 20.0% |
+| benchmark solo long | satura | **28.5%** | 19.7% |
+| Confluence v3.2 | satura | 20.2% | 15.7% |
+| Sanyaku v5.5 | 15.7% | **13.7%** | 20.0% |
+
+La Sanyaku, sizzata fino allo stesso rischio del benchmark, rende meno della
+metà. Il capitale fermo si può usare, e usarlo non ribalta la classifica.
+
+**Non cambia il verdetto sui tredici senza crypto.** Il massimo della curva è
+0.27 di MAR, 1.6% di CAGR. Leverare il nulla dà nulla leverato.
+
+**Non cambia nessuno dei ventidue confronti.** Ogni runner del progetto
+(`run_benchmark`, `run_ablation`, `run_ichimoku_tests`, `compare_strategies`,
+`validation`) usa `risk_pct=0.01`: tutte le ipotesi sono state misurate contro il
+benchmark nello stesso punto della curva, sullo stesso universo. Quei confronti
+sono alla pari e restano validi. L'unico che non lo era è sei contro quindici.
+
+### Perché il 4% non è un risultato
+
+La riga migliore di quella tabella è scelta guardando la tabella. È la stessa
+selezione in-sample che il progetto ha passato ventidue ipotesi a non fare, e
+sulla optimal f è più pericolosa che altrove: la curva è asimmetrica, superare il
+massimo costa molto più che restarne sotto, e il massimo stimato su undici anni
+di un campione non è il massimo del prossimo. In più il motore ammette che una
+barra gappi oltre lo stop, quindi al 4-8% nominale la perdita realizzata di un
+singolo trade può superare di parecchio il rischio dichiarato — a rischio 1% è
+un fastidio, al 8% è il tipo di evento che chiude un conto.
+
+Il numero utilizzabile di questa sezione non è "il 4% è meglio dell'1%". È: **i
+MAR di questo progetto vanno confrontati solo a parità di rischio per trade, e il
+rischio per trade è un parametro libero che nessuno ha ottimizzato — per scelta.**
+
 ## Limiti dichiarati
 
 1. **Undici anni sono un periodo, non un campione di periodi.** Il 2015-2026 è
@@ -197,4 +280,5 @@ python3 scripts/run_benchmark.py --universe core       # i sei, 0.87
 python3 scripts/run_benchmark.py --universe extended   # i quindici, 0.61
 python3 scripts/run_benchmark.py --universe no-crypto  # i tredici, 0.17 solo long
 python3 scripts/run_benchmark.py --universe no-crypto --start 2013-01-02   # 0.10
+python3 scripts/run_benchmark.py --universe extended --risk 4            # 1.45
 ```

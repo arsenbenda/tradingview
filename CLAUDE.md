@@ -12,6 +12,7 @@ python3 -m pytest tests/ -q                      # 85 test, devono passare tutti
 python3 scripts/run_benchmark.py                 # benchmark, i sei asset
 python3 scripts/run_benchmark.py --universe extended   # gli stessi parametri sui quindici
 python3 scripts/run_benchmark.py --universe no-crypto  # i tredici senza BTC ed ETH
+python3 scripts/run_benchmark.py --risk 4              # la stessa cosa a rischio 4%/trade
 python3 scripts/compare_strategies.py            # v3.2 e v5.5 contro il benchmark
 python3 scripts/run_ablation.py                  # quali componenti aggiungono valore
 python3 scripts/run_ichimoku_tests.py            # Ichimoku come segnale e come uscita
@@ -62,6 +63,12 @@ Sono il motivo per cui i numeri sopra sono affidabili. Vanno mantenute.
    alto delle tre è la peggiore delle tre, perché il PF ignora il capitale fermo.
 3. **Un solo set di parametri su tutti gli asset.** Ottimizzare per asset
    distrugge la domanda a cui il progetto vuole rispondere.
+   Il **rischio per trade è parte di quel set**: tutti i runner usano `risk_pct=0.01`.
+   Non è ottimizzato — a rischio 4% il benchmark farebbe MAR 1.50 invece di 0.87 —
+   ed è tenuto fisso perché il MAR **lusinga la leva** (drawdown percentuale
+   sublineare, rendimento composto superlineare), quindi due MAR misurati a
+   rischio diverso non sono confrontabili. Confrontare solo a parità di rischio.
+   Misura e derivazione in `results/universe_extended.md`, sezione sulla leva.
 4. **Ogni ipotesi testata va contata.** Il conteggio non sta più a mano: è la
    lunghezza di `engine/hypotheses.CATALOGUE`, e da lì entra nel Deflated Sharpe.
    Aggiungere un'ipotesi significa aggiungere una riga a quel catalogo, e la
@@ -154,8 +161,12 @@ Non ripetere questi test senza una ragione nuova.
   strumenti dimezza il drawdown (8.9% → 4.1%) ma taglia il CAGR di due terzi
   (7.7% → 2.5%): il MAR **scende** a 0.61. La diversificazione riduce il rischio,
   non fabbrica rendimento, e con capitale equipesato ogni strumento senza
-  vantaggio diluisce quelli che ce l'hanno. La leva non recupera niente, perché il
-  MAR è invariante di scala. Vale in tutti e tre gli scenari di costo e direzione.
+  vantaggio diluisce quelli che ce l'hanno. Vale in tutti e tre gli scenari di
+  costo e direzione. **Con una correzione importante**: questo confronto è a
+  rischio fisso 1% per trade, e il MAR *non* è invariante rispetto a quel numero —
+  sale fino a un massimo intorno al 4-8% e poi ridiscende. A rischio 4% il divario
+  è 1.50 contro 1.45, non 0.87 contro 0.61, e i quindici ci arrivano con metà del
+  drawdown. Il divario non si inverte, ma si riduce di due terzi.
   Controprova diretta: i tredici senza crypto fanno MAR 0.17 solo long (0.21 a
   costi zero) e −0.03 long/short, e allungando il campione al 2013 — possibile
   solo senza ETH — scendono a 0.10. Non è il periodo e non sono i costi.
