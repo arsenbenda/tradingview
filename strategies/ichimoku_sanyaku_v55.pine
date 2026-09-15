@@ -1,0 +1,257 @@
+//@version=6
+strategy("Ichimoku Sanyaku v5.5 [Conservative]", overlay=true, initial_capital=100000, commission_type=strategy.commission.percent, commission_value=0.05, slippage=2, calc_on_every_tick=false)
+
+// v5.5 changes (bug fixes only, no strategy logic changed):
+//  1. Stop-loss is now attached on the entry bar, so the fill bar is protected
+//     (previously the first stop was only placed at the close of the fill bar).
+//  2. ta.crossover(close, cloudTop) for Entry 4 is computed on every bar.
+//     Pine v6 evaluates `and`/`or` lazily, so inside `withinReclaimWin and ...`
+//     it was skipped on most bars and returned stale results.
+//  3. Equity-curve SMA is computed on every bar (same lazy-evaluation issue),
+//     so the equity filter works correctly when enabled.
+
+// ============ Inputs ============
+grpIchi = "Ichimoku"
+tenkanLen  = input.int(9,  "Tenkan-sen length", group=grpIchi)
+kijunLen   = input.int(26, "Kijun-sen length", group=grpIchi)
+senkouBLen = input.int(52, "Senkou Span B length", group=grpIchi)
+disp       = input.int(26, "Displacement (Kumo/Chikou)", group=grpIchi)
+
+grpE = "Entries"
+useSanyaku      = input.bool(true, "Entry 1: Sanyaku Kouten (Trinity breakout)", group=grpE)
+useBounce       = input.bool(true, "Entry 2: Kijun-sen bounce (continuation)", group=grpE)
+useEarlyTK      = input.bool(true, "Entry 3: Early TK weak buy (below cloud)", group=grpE)
+useReclaim      = input.bool(true, "Entry 4: Post-exit reclaim re-entry", group=grpE)
+useCloudReclaim = input.bool(true, "Entry 5: Cloud reclaim", group=grpE)
+reclaimBars     = input.int(10, "Reclaim window after cloud-trail exit (bars)", group=grpE)
+crWindow        = input.int(60, "Cloud reclaim window (bars below cloud)", group=grpE)
+
+grpCR = "Cloud reclaim options"
+crWideStop    = input.bool(false, "CR: wider initial stop (cloud bottom - buffer)", group=grpCR)
+crStopBuf     = input.float(1.0, "CR: stop buffer below cloud bottom (x ATR)", step=0.25, group=grpCR)
+crDelayTrail  = input.bool(true, "CR: delay cloud trail until in profit", group=grpCR)
+crTrailActATR = input.float(1.25, "CR: trail activation threshold (x ATR profit)", step=0.25, group=grpCR)
+crDecisive    = input.bool(false, "CR: require decisive reclaim (close > cloud top + buffer)", group=grpCR)
+crBuf         = input.float(0.25, "CR: reclaim buffer above cloud top (x ATR)", step=0.05, group=grpCR)
+
+grpN = "Noise control"
+adaptiveCooldown = input.bool(false, "Adaptive cooldown (longer after real losses)", group=grpN)
+cooldownLossBars = input.int(15, "Cooldown after loss (bars)", group=grpN)
+zoneLock         = input.bool(true, "One entry per cloud zone", group=grpN)
+zoneRangeATR     = input.float(2.0, "Zone lock range (x ATR from cloud top)", step=0.5, group=grpN)
+minCloudThick    = input.float(0.75, "Min cloud thickness (x ATR)", step=0.25, group=grpN)
+
+grpF = "Filters"
+htfGateCon   = input.bool(true, "HTF gate on continuation entries", group=grpF)
+strictChikou = input.bool(false, "Strict Chikou: full open-sky (off = classical close > high[disp])", group=grpF)
+atrLen       = input.int(14, "ATR length", group=grpF)
+minATRpct    = input.float(0.5, "Min ATR % of price (0 = off)", step=0.1, group=grpF)
+htfMode      = input.string("Auto", "HTF mode", options=["Auto", "Custom"], group=grpF)
+customHTF    = input.timeframe("W", "Custom HTF (if mode = Custom)", group=grpF)
+
+grp54 = "v5.4 fixes"
+e4BypassLock     = input.bool(true, "Entry 4 ignores zone lock", group=grp54)
+e4BypassCooldown = input.bool(true, "Entry 4 ignores cooldown", group=grp54)
+zoneDirectional  = input.bool(true, "Zone lock releases when price leaves zone", group=grp54)
+useOverext       = input.bool(false, "Block entries overextended above Kijun", group=grp54)
+overextATR       = input.float(3.0, "Overextension limit (x ATR above Kijun)", step=0.5, group=grp54)
+
+grpR = "Risk management"
+useRiskMgmt   = input.bool(true, "Enable risk management features", group=grpR)
+useLossPause  = input.bool(true, "Max consecutive losses: pause trading", group=grpR)
+maxConsecLoss = input.int(5, "Max consecutive losses before pause", group=grpR)
+pauseBars     = input.int(10, "Pause duration (bars)", group=grpR)
+useDDbreaker  = input.bool(true, "Drawdown circuit breaker: reduce risk in drawdown", group=grpR)
+ddThreshold   = input.float(15.0, "Drawdown threshold to reduce risk (%)", group=grpR)
+ddRiskFactor  = input.float(0.5, "Risk reduction factor in drawdown", step=0.1, group=grpR)
+useEqFilter   = input.bool(false, "Equity curve filter: pause when equity below SMA", group=grpR)
+eqSMALen      = input.int(5, "Equity curve SMA length", group=grpR)
+
+grpV = "Visuals"
+shadeTrade = input.bool(true, "Shade background while in a long trade", group=grpV)
+tradeColor = input.color(#4caf50, "Trade background color", group=grpV)
+showDiag   = input.bool(true, "Show blocker diagnostics on chart", group=grpV)
+
+grpS = "Sizing / exits"
+riskPerTradePct = input.float(1.0, "Risk per trade (% equity)", step=0.25, group=grpS)
+maxNotionalPct  = input.float(60.0, "Max position notional (% equity)", group=grpS)
+weakRiskMult    = input.float(0.5, "Weak entry risk multiplier (Early TK)", step=0.1, group=grpS)
+reclaimRiskMult = input.float(0.5, "Reclaim re-entry risk multiplier", step=0.1, group=grpS)
+crRiskMult      = input.float(0.75, "Cloud reclaim risk multiplier", step=0.05, group=grpS)
+minStopATR      = input.float(1.5, "Min stop distance (x ATR floor)", step=0.25, group=grpS)
+beATR           = input.float(2.0, "Breakeven trigger (x ATR open profit)", step=0.25, group=grpS)
+cooldownBars    = input.int(5, "Cooldown after exit (bars)", group=grpS)
+
+// ============ Core Ichimoku ============
+donchian(len) =>
+    (ta.highest(high, len) + ta.lowest(low, len)) / 2.0
+
+tenkan  = donchian(tenkanLen)
+kijun   = donchian(kijunLen)
+senkouA = (tenkan + kijun) / 2.0
+senkouB = donchian(senkouBLen)
+atr     = ta.atr(atrLen)
+
+ssa      = nz(senkouA[disp])
+ssb      = nz(senkouB[disp])
+cloudTop = math.max(ssa, ssb)
+cloudBot = math.min(ssa, ssb)
+
+cloudThickOK = math.abs(ssa - ssb) >= minCloudThick * atr
+atrPctOK     = minATRpct <= 0 or (atr / close * 100.0) >= minATRpct
+highestPrior = nz(ta.highest(high, disp)[1])   // v5.5: hoisted out of the ternary so it updates every bar
+chikouClear  = strictChikou ? close > highestPrior : close > nz(high[disp])
+
+tkBull    = tenkan > kijun
+tkCrossUp = ta.crossover(tenkan, kijun)
+
+// ============ HTF regime (confirmed values, non-repainting) ============
+htfAuto = timeframe.isintraday ? "D" : timeframe.isdaily ? "W" : timeframe.isweekly ? "M" : "3M"
+htfTf   = htfMode == "Auto" ? htfAuto : customHTF
+[htfClose, htfKijun] = request.security(syminfo.tickerid, htfTf, [close[1], donchian(kijunLen)[1]], lookahead=barmerge.lookahead_on)
+htfRegime = htfClose > htfKijun ? 1 : htfClose < htfKijun ? -1 : 0
+htfOK     = not htfGateCon or htfRegime == 1 or (htfRegime == -1 and close > cloudTop)
+
+// ============ State ============
+var int   lastExitBar     = na
+var bool  lastExitWasLoss = false
+var int   consecLosses    = 0
+var int   pauseUntilBar   = na
+var float peakEquity      = na
+var bool  zoneLocked      = false
+var float zoneAnchor      = na
+var int   entryType       = 0
+var float curStop         = na
+var float entryATR        = na
+var bool  trailActive     = false
+
+closedChange = ta.change(strategy.closedtrades)
+if closedChange > 0
+    p = strategy.closedtrades.profit(strategy.closedtrades - 1)
+    lastExitBar     := bar_index
+    lastExitWasLoss := p < 0
+    if useRiskMgmt and useLossPause
+        consecLosses := p < 0 ? consecLosses + 1 : 0
+        if consecLosses >= maxConsecLoss
+            pauseUntilBar := bar_index + pauseBars
+            consecLosses  := 0
+
+peakEquity := na(peakEquity) ? strategy.equity : math.max(peakEquity, strategy.equity)
+ddPct      = peakEquity > 0 ? (peakEquity - strategy.equity) / peakEquity * 100.0 : 0.0
+ddRiskMult = useRiskMgmt and useDDbreaker and ddPct > ddThreshold ? ddRiskFactor : 1.0
+eqSMA      = ta.sma(strategy.equity, eqSMALen)   // v5.5: computed every bar (was skipped by lazy `or`)
+eqOK       = not (useRiskMgmt and useEqFilter) or strategy.equity >= eqSMA
+paused     = useRiskMgmt and useLossPause and not na(pauseUntilBar) and bar_index <= pauseUntilBar
+
+cooldownLen = adaptiveCooldown and lastExitWasLoss ? cooldownLossBars : cooldownBars
+inCooldown  = not na(lastExitBar) and (bar_index - lastExitBar) < cooldownLen
+
+// ============ Zone lock (directional release in v5.4) ============
+zoneUpper = nz(zoneAnchor, close) + zoneRangeATR * atr
+if zoneLocked and zoneDirectional and (close > zoneUpper or close < cloudBot)
+    zoneLocked := false
+inLockedZone = zoneLock and zoneLocked and (zoneDirectional ? close <= zoneUpper : true)
+
+// ============ Raw entry signals ============
+trinityNow = close > cloudTop and tkBull and chikouClear and cloudThickOK
+sanyakuRaw = useSanyaku and trinityNow and not trinityNow[1]
+
+bounceRaw = useBounce and close > cloudTop and tkBull and low <= kijun and close > kijun and close > open
+
+earlyTKRaw = useEarlyTK and tkCrossUp and close < cloudBot
+
+closeXCloud      = ta.crossover(close, cloudTop)   // v5.5: computed every bar (was skipped by lazy `and`)
+withinReclaimWin = useReclaim and not na(lastExitBar) and (bar_index - lastExitBar) <= reclaimBars
+reclaimRaw       = withinReclaimWin and closeXCloud and chikouClear
+
+recentlyBelow = math.sum(close < cloudBot ? 1 : 0, crWindow) > 0
+crLevel       = crDecisive ? cloudTop + crBuf * atr : cloudTop
+crRaw         = useCloudReclaim and recentlyBelow and close > crLevel and close[1] <= nz(crLevel[1]) and chikouClear and cloudThickOK
+
+// ============ Blockers (Entry 4 bypasses cooldown and zone lock in v5.4) ============
+stdBlock  = inCooldown or inLockedZone or paused or not eqOK or not atrPctOK
+e4Block   = (e4BypassCooldown ? false : inCooldown) or (e4BypassLock ? false : inLockedZone) or paused or not eqOK or not atrPctOK
+overextOK = not useOverext or close <= kijun + overextATR * atr
+flat      = strategy.position_size == 0
+
+e1 = flat and sanyakuRaw and htfOK and not stdBlock and overextOK
+e4 = flat and reclaimRaw and not e4Block and overextOK
+e5 = flat and crRaw and not stdBlock and overextOK
+e2 = flat and bounceRaw and htfOK and not stdBlock and overextOK
+e3 = flat and earlyTKRaw and not stdBlock and overextOK
+anyEntry = e1 or e4 or e5 or e2 or e3
+
+// ============ Entry execution ============
+if anyEntry
+    entryType := e1 ? 1 : e4 ? 4 : e5 ? 5 : e2 ? 2 : 3
+    entryATR  := atr
+    entryMult = e3 ? weakRiskMult : e4 ? reclaimRiskMult : e5 ? crRiskMult : 1.0
+    stopBase  = e5 and crWideStop ? cloudBot - crStopBuf * atr : close > cloudTop ? cloudBot : math.min(kijun, low)
+    stopDist  = math.max(close - stopBase, minStopATR * atr)
+    riskUSD   = strategy.equity * (riskPerTradePct / 100.0) * entryMult * ddRiskMult
+    qtyRisk   = riskUSD / stopDist
+    qtyCap    = strategy.equity * (maxNotionalPct / 100.0) / close
+    qty       = math.min(qtyRisk, qtyCap)
+    if qty > 0
+        strategy.entry("L", strategy.long, qty=qty)
+        curStop     := close - stopDist
+        trailActive := entryType == 3 ? false : entryType == 5 and crDelayTrail ? false : true
+        zoneLocked  := true
+        zoneAnchor  := cloudTop
+        // v5.5: attach the initial stop now so it is live on the bar the entry fills
+        strategy.exit("L-cloudtrail", from_entry="L", stop=curStop)
+
+// ============ Exit management: initial stop -> breakeven -> cloud trail ============
+if strategy.position_size > 0
+    openProfit = close - strategy.position_avg_price
+    if openProfit >= beATR * entryATR
+        curStop := math.max(curStop, strategy.position_avg_price)
+    if not trailActive
+        if entryType == 3 and close > cloudTop
+            trailActive := true
+        if entryType == 5 and crDelayTrail and openProfit >= crTrailActATR * entryATR
+            trailActive := true
+    if trailActive
+        curStop := math.max(curStop, cloudBot)
+    strategy.exit("L-cloudtrail", from_entry="L", stop=curStop)
+
+// ============ Visuals ============
+bgcolor(shadeTrade and strategy.position_size > 0 ? color.new(tradeColor, 88) : na)
+
+plot(tenkan, "Tenkan-sen", color=color.new(color.red, 0))
+plot(kijun, "Kijun-sen", color=color.new(color.blue, 0))
+pA = plot(senkouA, "Senkou A", color=color.new(color.green, 0), offset=disp)
+pB = plot(senkouB, "Senkou B", color=color.new(color.orange, 0), offset=disp)
+fill(pA, pB, color=ssa >= ssb ? color.new(color.green, 90) : color.new(color.red, 90), title="Kumo")
+plot(close, "Chikou", color=color.new(color.purple, 0), offset=-disp)
+
+plotshape(e1, title="E1 Sanyaku", style=shape.labelup, location=location.belowbar, color=color.aqua, text="三", textcolor=color.black, size=size.small)
+plotshape(e2, title="E2 Bounce", style=shape.labelup, location=location.belowbar, color=color.blue, text="K", textcolor=color.white, size=size.small)
+plotshape(e3, title="E3 Early TK", style=shape.labelup, location=location.belowbar, color=color.orange, text="TK", textcolor=color.black, size=size.small)
+plotshape(e4, title="E4 Reclaim", style=shape.labelup, location=location.belowbar, color=color.lime, text="R", textcolor=color.black, size=size.small)
+plotshape(e5, title="E5 Cloud Reclaim", style=shape.labelup, location=location.belowbar, color=color.fuchsia, text="CR", textcolor=color.white, size=size.small)
+
+blockedRaw = showDiag and flat and (sanyakuRaw or bounceRaw or earlyTKRaw or reclaimRaw or crRaw)
+plotchar(blockedRaw and inCooldown, title="Blocked: cooldown", char="C", location=location.abovebar, color=color.new(color.yellow, 0), size=size.tiny)
+plotchar(blockedRaw and inLockedZone, title="Blocked: zone lock", char="Z", location=location.abovebar, color=color.new(color.gray, 0), size=size.tiny)
+plotchar(blockedRaw and paused, title="Blocked: pause", char="P", location=location.abovebar, color=color.new(color.red, 0), size=size.tiny)
+plotchar(blockedRaw and not cloudThickOK, title="Blocked: thin cloud", char="T", location=location.abovebar, color=color.new(color.orange, 0), size=size.tiny)
+
+var table diag = table.new(position.top_right, 2, 7, border_width=1)
+if barstate.islast and showDiag
+    table.cell(diag, 0, 0, "Diagnostics", text_color=color.white, bgcolor=color.new(color.black, 40))
+    table.cell(diag, 0, 1, "Cooldown", text_color=color.white)
+    table.cell(diag, 1, 1, inCooldown ? "ON" : "off", text_color=inCooldown ? color.yellow : color.gray)
+    table.cell(diag, 0, 2, "Zone lock", text_color=color.white)
+    table.cell(diag, 1, 2, zoneLocked ? "ON" : "off", text_color=zoneLocked ? color.yellow : color.gray)
+    table.cell(diag, 0, 3, "Paused", text_color=color.white)
+    table.cell(diag, 1, 3, paused ? "ON" : "off", text_color=paused ? color.red : color.gray)
+    table.cell(diag, 0, 4, "HTF regime", text_color=color.white)
+    table.cell(diag, 1, 4, htfRegime == 1 ? "bull" : htfRegime == -1 ? "bear" : "flat", text_color=htfRegime == 1 ? color.lime : htfRegime == -1 ? color.red : color.gray)
+    table.cell(diag, 0, 5, "Cloud thick OK", text_color=color.white)
+    table.cell(diag, 1, 5, cloudThickOK ? "yes" : "NO", text_color=cloudThickOK ? color.lime : color.orange)
+    table.cell(diag, 0, 6, "Chikou clear", text_color=color.white)
+    table.cell(diag, 1, 6, chikouClear ? "yes" : "NO", text_color=chikouClear ? color.lime : color.orange)
+
+alertcondition(anyEntry, title="Sanyaku long entry", message="Ichimoku Sanyaku v5.5: long entry signal")
+alertcondition(closedChange > 0, title="Sanyaku exit", message="Ichimoku Sanyaku v5.5: position closed")
