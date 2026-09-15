@@ -369,11 +369,44 @@ Non ripetere questi test senza una ragione nuova.
 
    *Dal 2026-09-15 il tempo che passa viene raccolto* invece che aspettato:
    `scripts/run_forward.py` registra ogni giorno la decisione e i suoi ingressi
-   in `data/forward/decisioni.jsonl`, append-only e firmato. **Nessun holdout
+   in `data/forward/decisioni.jsonl`, append-only e firmato.
+
+   **Manca però il carburante, ed è il primo lavoro da fare.** `data/raw/` è
+   statico e finisce al 2026-09-14: rilanciare il runner domani scrive *zero*
+   righe, per sempre. Il registro esiste ma non può accumulare finché non c'è un
+   passo che aggiorna le serie ogni giorno, con `validate_series.py` come gate e
+   **una sola famiglia di fonti per asset** — cambiare fornitore a metà
+   spezzerebbe la confrontabilità delle righe esattamente come la spezza un
+   cambio di configurazione. Il sorvegliante si accorge del digiuno da solo
+   («registro fermo da N giorni», dopo cinque), che è la prova che il meccanismo
+   funziona e insieme la misura di quanto sia inutile senza dati freschi. **Nessun holdout
    ritagliato da questo campione è pulito** — è stato guardato tutto, più volte,
    e da un LLM che ha in addestramento l'esito di ogni evento fino al 2026. Quel
    registro è l'unico out-of-sample non contaminato che il progetto possa avere,
    e comincia a valere qualcosa fra qualche centinaio di barre, non domani.
+
+6. ~~Validare la v5.5 come si è validato tutto il resto~~: **chiusa, con esito
+   negativo.** Eseguita il 2026-09-15 con lo stesso identico protocollo del
+   candidato in tutte e cinque le prove — non solo il DSR, perché confrontare due
+   verdetti ottenuti con protocolli diversi non vuol dire niente.
+
+   | prova | `cloud_exit` | **v5.5** |
+   |---|---|---|
+   | walk-forward fisso, delta MAR mediano | +0.27, 7/8 positivi | **−0.36**, 3/8 |
+   | k-fold purgato, delta MAR mediano | +0.76, 5/5 | **+0.01**, 3/5 |
+   | DSR a parità di volatilità | 0.075 | **0.003** |
+   | PSR a parità di volatilità | 0.952 | **0.560** |
+   | bootstrap, P(delta ≤ 0) | 20-30% | **51%** |
+
+   La domanda era se il progetto avesse trovato qualcosa o solo riparato uno
+   strumento. **Ha riparato uno strumento.** Lo Sharpe 1.42 era volatilità bassa
+   (0.64× il benchmark), non vantaggio: riportato alla scala del benchmark vale
+   +0.05 di Sharpe annuo contro una soglia di 0.89.
+
+   Resta però vero, e vale più del verdetto, che il difetto è stato trovato dal
+   **parity test** e da nient'altro: né la suite, né undici anni di backtest, né
+   ventitré ipotesi lo avevano visto. È l'argomento più forte per chiudere la
+   questione 4.
 
 7. **Sorveglianza, sì; correzione automatica, no.** Il registro forward porta con
    sé `forward.anomalie()`, che segnala il silenzio prolungato di un asset e il
@@ -405,29 +438,6 @@ Non ripetere questi test senza una ragione nuova.
    Le proposte nascono **vuote**: il sorvegliante sa dire che qualcosa non torna,
    non cosa cambiare, e un testo generato che *sembra* una diagnosi è peggio di un
    campo in bianco perché invita ad accettarlo senza guardarci.
-
-6. ~~Validare la v5.5 come si è validato tutto il resto~~: **chiusa, con esito
-   negativo.** Eseguita il 2026-09-15 con lo stesso identico protocollo del
-   candidato in tutte e cinque le prove — non solo il DSR, perché confrontare due
-   verdetti ottenuti con protocolli diversi non vuol dire niente.
-
-   | prova | `cloud_exit` | **v5.5** |
-   |---|---|---|
-   | walk-forward fisso, delta MAR mediano | +0.27, 7/8 positivi | **−0.36**, 3/8 |
-   | k-fold purgato, delta MAR mediano | +0.76, 5/5 | **+0.01**, 3/5 |
-   | DSR a parità di volatilità | 0.075 | **0.003** |
-   | PSR a parità di volatilità | 0.952 | **0.560** |
-   | bootstrap, P(delta ≤ 0) | 20-30% | **51%** |
-
-   La domanda era se il progetto avesse trovato qualcosa o solo riparato uno
-   strumento. **Ha riparato uno strumento.** Lo Sharpe 1.42 era volatilità bassa
-   (0.64× il benchmark), non vantaggio: riportato alla scala del benchmark vale
-   +0.05 di Sharpe annuo contro una soglia di 0.89.
-
-   Resta però vero, e vale più del verdetto, che il difetto è stato trovato dal
-   **parity test** e da nient'altro: né la suite, né undici anni di backtest, né
-   ventitré ipotesi lo avevano visto. È l'argomento più forte per chiudere la
-   questione 4.
 
 ## Deviazioni note del porting
 
