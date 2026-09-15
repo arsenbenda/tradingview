@@ -86,6 +86,46 @@ ETH 0 duplicati, 0 buchi.
   disco. Le risposte grandi espongono anche un `data_url` su
   `cdn.alphavantage.co`, scaricabile con curl.
 
+## Server MCP: ricognizione del registry
+
+Verificato se un altro connector MCP risolve il buco sulle commodities daily.
+
+### Perimetro esatto del piano Alpha Vantage free
+
+Testato endpoint per endpoint, non dedotto:
+
+| Endpoint | Esito |
+|---|---|
+| `DIGITAL_CURRENCY_DAILY` | **libero, storia completa, OHLCV** |
+| `TIME_SERIES_WEEKLY` | **libero, storia completa, OHLCV** |
+| `TIME_SERIES_DAILY` `outputsize=full` | premium (il free dà 100 barre) |
+| `TIME_SERIES_DAILY_ADJUSTED` | premium |
+| `INDEX_DATA` (SPX, DAX, indici) | premium — "not yet entitled to index data access" |
+| `FX_DAILY` con `XAU/USD` | rifiutato: XAU non è nella lista FX di Alpha Vantage |
+| commodities (`WTI`, `CORN`, …) | libere ma **solo close**, e le agricole solo monthly |
+
+Quindi su Alpha Vantage il daily OHLC esiste solo per le crypto. Il resto
+richiede il piano premium.
+
+### Altri connector già collegati
+
+- **Bigdata.com** `market_tearsheet`: prezzo corrente e variazioni % su
+  1D/5D/1M/3M/6M/YTD/1Y, comprese commodities. È uno snapshot, **non una serie
+  storica** — inutilizzabile per un backtest.
+- **Crypto.com** `get_market_candles`: OHLCV crypto a intervalli, ma limitato
+  per numero di barre. Il lato crypto è già coperto meglio da Alpha Vantage.
+
+### Candidati che risolverebbero, da collegare su claude.ai
+
+| Server | Free tier | Storia daily | Giudizio |
+|---|---|---|---|
+| **Twelve Data** | 800 crediti/giorno, 8/min | **storia completa** dalla prima data di quotazione su intervalli daily/weekly/monthly | **prima scelta**; da verificare la copertura ETF sul piano free, che la documentazione lega ai piani superiori |
+| **FMP** | 250 chiamate/giorno, EOD, 500MB/30gg | **~5 anni** | simboli commodities diretti (`GCUSD` oro, `CLUSD` crude) senza passare dagli ETF, ma 5 anni non coprono più di un regime |
+| **CoinDesk** | — | OHLCV crypto e indici | `connect_incomplete`; crypto già coperto |
+
+Nessuno dei due può essere collegato da qui: l'autorizzazione va fatta
+dall'utente su claude.ai.
+
 ## Cosa serve per sbloccare le commodities
 
 Tre opzioni, in ordine di preferenza:
