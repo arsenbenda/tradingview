@@ -404,11 +404,10 @@ def evaluate(universe: dict[str, pd.DataFrame], runner, segments,
                             trades=[], exposure=float("nan")), capital, years=total_years),
             {}, empty)
 
-    # capitale in parti uguali sugli asset, come in metrics.portfolio_equity:
-    # senza una regola di allocazione dichiarata qualunque altro peso sarebbe
-    # una scelta presa guardando i risultati.
-    frame = pd.concat(per_asset_returns, axis=1).sort_index()
-    pf_returns = frame.fillna(0.0).mean(axis=1)
+    # stessa aggregazione di metrics.portfolio_equity, e non una copia: un
+    # portafoglio calcolato in due modi diversi nel benchmark e nella
+    # validazione renderebbe incomparabili i due numeri che servono a confronto
+    pf_returns = metrics.equal_weight_returns(per_asset_returns)
     pf_equity = capital * (1 + pf_returns).cumprod()
     stats = metrics.compute(
         backtest.Result(equity=pf_equity, trades=all_trades, exposure=float("nan")),

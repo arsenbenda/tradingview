@@ -79,7 +79,7 @@ def table(rows, title):
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--start", default="2015-08-08")
+    ap.add_argument("--start", default=data.DEFAULT_START)
     args = ap.parse_args()
 
     universe = {k: v[v.index >= args.start] for k, v in data.load_universe().items()}

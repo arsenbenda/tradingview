@@ -43,7 +43,7 @@ def line(label, pf, base=None, per_asset=None, base_assets=None):
 
 
 def main() -> int:
-    universe = {k: v[v.index >= "2015-08-08"] for k, v in data.load_universe().items()}
+    universe = {k: v[v.index >= data.DEFAULT_START] for k, v in data.load_universe().items()}
     start, end = data.common_period(universe)
     print(f"periodo: {start.date()} -> {end.date()} | un solo set di parametri | costi per asset")
     head = f"{'':24s} {'MAR':>6s} {'delta':>6s} {'Sharpe':>7s} {'CAGR':>7s} {'maxDD':>7s} {'PF':>6s} {'trade':>6s} {'best':>5s}"

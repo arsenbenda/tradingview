@@ -25,6 +25,20 @@ UNIVERSE = {
 
 OHLCV = ["open", "high", "low", "close", "volume"]
 
+#: inizio del periodo di lavoro, comune a tutto l'universo.
+#:
+#: È la prima barra di ETH, lo strumento con meno storia: GLD, USO e SPY
+#: partono dal 2006, CORN dal 2010, BTC dal 2013. Sta qui e non dentro i runner
+#: perché ogni script che la ridichiara è uno script che un giorno userà una
+#: data diversa dagli altri, e due backtest su periodi diversi non sono
+#: confrontabili — che è l'unica cosa che questo progetto fa.
+#:
+#: Aggiungere uno strumento **non** obbliga a spostarla in avanti: chi quota
+#: dopo contribuisce dalla sua prima barra, ed è escluso dal denominatore del
+#: portafoglio prima di allora (``metrics.equal_weight_returns``). Va spostata
+#: solo se si toglie ETH o si aggiunge qualcosa con ancora meno storia.
+DEFAULT_START = "2015-08-08"
+
 
 def load(name_or_path: str) -> pd.DataFrame:
     """Carica una serie per nome logico (``"BTC"``) o per percorso.

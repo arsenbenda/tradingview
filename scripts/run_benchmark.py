@@ -11,6 +11,11 @@ Vengono prodotti tre scenari:
   * long/short, costi doppi — se una strategia sopravvive solo al primo
     scenario, non è una strategia
 
+Il periodo di default è quello comune all'universo (`data.DEFAULT_START`), lo
+stesso di ogni altro runner: senza, questo script girerebbe sulla storia piena di
+ciascuna serie e produrrebbe numeri non confrontabili con nessun altro risultato
+del progetto.
+
 Uso: python3 scripts/run_benchmark.py [--start AAAA-MM-GG]
 """
 
@@ -67,7 +72,9 @@ def table(rows: list[tuple[str, metrics.Stats]], title: str) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--start", default=None, help="limita tutte le serie da questa data")
+    ap.add_argument("--start", default=data.DEFAULT_START,
+                    help="limita tutte le serie da questa data (default: il periodo "
+                         "comune dell'universo; usare --start 1900-01-01 per la storia piena)")
     args = ap.parse_args()
 
     universe = data.load_universe()

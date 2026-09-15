@@ -77,7 +77,7 @@ def main() -> int:
     ap.add_argument("--boot", type=int, default=2000, help="ricampionamenti del bootstrap")
     args = ap.parse_args()
 
-    universe = {k: v[v.index >= "2015-08-08"] for k, v in data.load_universe().items()}
+    universe = {k: v[v.index >= data.DEFAULT_START] for k, v in data.load_universe().items()}
     start, end = data.common_period(universe)
     intero = [V.Segment(start, end)]
     base_runner = H.SELECTION_POOL[H.BASE_NAME]
