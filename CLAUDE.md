@@ -8,7 +8,7 @@ perché TradingView non espone API per lo Strategy Tester.
 
 ```bash
 pip install pandas numpy pytest
-python3 -m pytest tests/ -q                      # 85 test, devono passare tutti
+python3 -m pytest tests/ -q                      # 92 test, devono passare tutti
 python3 scripts/run_benchmark.py                 # benchmark, i sei asset
 python3 scripts/run_benchmark.py --universe extended   # gli stessi parametri sui quindici
 python3 scripts/run_benchmark.py --universe no-crypto  # i tredici senza BTC ed ETH
@@ -17,6 +17,7 @@ python3 scripts/compare_strategies.py            # v3.2 e v5.5 contro il benchma
 python3 scripts/run_ablation.py                  # quali componenti aggiungono valore
 python3 scripts/run_ichimoku_tests.py            # Ichimoku come segnale e come uscita
 python3 scripts/run_validation.py                # walk-forward, k-fold purgato, DSR
+python3 scripts/run_risk_walkforward.py          # il rischio per trade scelto fuori campione
 python3 scripts/validate_series.py               # gate di qualità sui dati
 ```
 
@@ -64,11 +65,13 @@ Sono il motivo per cui i numeri sopra sono affidabili. Vanno mantenute.
 3. **Un solo set di parametri su tutti gli asset.** Ottimizzare per asset
    distrugge la domanda a cui il progetto vuole rispondere.
    Il **rischio per trade è parte di quel set**: tutti i runner usano `risk_pct=0.01`.
-   Non è ottimizzato — a rischio 4% il benchmark farebbe MAR 1.50 invece di 0.87 —
-   ed è tenuto fisso perché il MAR **lusinga la leva** (drawdown percentuale
-   sublineare, rendimento composto superlineare), quindi due MAR misurati a
-   rischio diverso non sono confrontabili. Confrontare solo a parità di rischio.
-   Misura e derivazione in `results/universe_extended.md`, sezione sulla leva.
+   Non è ottimizzato, ed è tenuto fisso per due ragioni distinte. La prima è di
+   misura: il MAR **lusinga la leva** — a leva pura lo Sharpe resta esattamente
+   costante e il MAR sale lo stesso da 0.89 a 1.22 — quindi due MAR misurati a
+   rischio diverso non sono confrontabili, mai. La seconda è che sopra il 2% quel
+   parametro **non regola più il rischio**: il tetto sul capitale morde e il sizing
+   proporzionale all'ATR viene sostituito da uno a nozionale costante (142 trade su
+   178 a rischio 8%). Misure in `results/risk_walkforward.md`.
 4. **Ogni ipotesi testata va contata.** Il conteggio non sta più a mano: è la
    lunghezza di `engine/hypotheses.CATALOGUE`, e da lì entra nel Deflated Sharpe.
    Aggiungere un'ipotesi significa aggiungere una riga a quel catalogo, e la
@@ -100,7 +103,8 @@ engine/
 scripts/          runner riproducibili + estrattori dati + gate di qualità
 strategies/       i due Pine originali, invariati
 results/          benchmark_donchian.md, comparison.md, ablation.md,
-                  ichimoku_tests.md, validation.md, universe_extended.md
+                  ichimoku_tests.md, validation.md, universe_extended.md,
+                  risk_walkforward.md
 data/universe_declaration.md   la lista dei quindici, dichiarata prima dei dati
 research/         state-of-the-art.md — ricognizione della letteratura
 data/README.md    fonti, difetti trovati, perimetro dei connector
@@ -169,7 +173,15 @@ Non ripetere questi test senza una ragione nuova.
   drawdown. Il divario non si inverte, ma si riduce di due terzi.
   Controprova diretta: i tredici senza crypto fanno MAR 0.17 solo long (0.21 a
   costi zero) e −0.03 long/short, e allungando il campione al 2013 — possibile
-  solo senza ETH — scendono a 0.10. Non è il periodo e non sono i costi.
+  solo senza ETH — scendono a 0.10. Non è il periodo e non sono i costi. E non è
+  nemmeno il rischio per trade: al suo ottimo fuori campione i tredici arrivano a
+  MAR 0.38 e CAGR 2.2% (`results/risk_walkforward.md`).
+* **La leva come leva di rendimento.** A leva pura — stessi trade, rendimenti
+  moltiplicati per k — lo Sharpe è **esattamente costante a 1.18** per k da 1 a 8,
+  e il MAR sale da 0.89 a 1.22 solo per l'artefatto di misura. Non c'è pasto
+  gratis. Quello che migliora davvero lo Sharpe (1.18 → 1.41) alzando `risk_pct`
+  è un'altra cosa: il tetto sul capitale che sostituisce il sizing ATR con uno a
+  nozionale costante. Vedi la questione aperta 5.
 * **Cercare la ventitreesima ipotesi su questi dati.** Ogni ipotesi in più alza
   la soglia del DSR per tutte le precedenti: da N = 22 a N = 40 la soglia passa
   da 0.85 a 0.96 di Sharpe annuo. Continuare a cercare su questo campione rende
@@ -224,13 +236,26 @@ Non ripetere questi test senza una ragione nuova.
    obbligazionario, valute, azionario globale, immobiliare e materie prime non
    producono con Donchian 55/20 nulla di distinguibile da zero.**
 
-3. **Parity test contro il Pine.** Mai eseguito, e ora l'unica verifica aperta
+3. **Sizing a nozionale costante contro sizing proporzionale all'ATR.**
+   **Aperta, e non cercata**: è caduta fuori dalla validazione del rischio per
+   trade (`results/risk_walkforward.md`). Fuori campione l'ottimo del rischio è il
+   4% su tutte e quattro le configurazioni provate, con lo Sharpe che sale da 1.21
+   a 1.37 sui sei — ma la *procedura* che sceglie il rischio anno per anno non
+   funziona (mediana del delta −0.01, ρ di rango IS/OOS −0.04, 4 finestre su 8), e
+   soprattutto **ciò che migliora non è la leva**: è che sopra il 2% il tetto sul
+   capitale spegne il sizing ATR. L'ipotesi vera è quindi sul *sizing*, vale +0.21
+   di Sharpe, e per essere un risultato va riformulata come regola esplicita e
+   passata dal DSR con **N = 23**. Non è stata aggiunta a
+   `engine.hypotheses.CATALOGUE`: **N resta 22** e nessun numero pubblicato cambia.
+   Alzare N è una decisione, non un effetto collaterale.
+
+4. **Parity test contro il Pine.** Mai eseguito, e ora l'unica verifica aperta
    che non richieda di cercare un vantaggio nuovo. Richiede export CSV da
    TradingView degli stessi simboli, perché il parity ha senso solo se i due lati
    usano lo stesso feed — l'1.5% delle barre crypto differisce oltre il 2% fra
    due fonti diverse.
 
-4. **Dati fuori campione veri.** Nessun test su questo campione può più
+5. **Dati fuori campione veri.** Nessun test su questo campione può più
    distinguere un vantaggio di 0.28 di Sharpe annuo da zero: undici anni e sei
    asset non contengono l'informazione necessaria. L'unico modo di riaprire la
    domanda è allargare il campione — altri strumenti, o il tempo che passa — non

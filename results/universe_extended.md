@@ -84,15 +84,26 @@ vantaggio aggiunto diluisce quelli che ce l'hanno: il contributo di BTC ed ETH
 passa da 2/6 a 2/15 del capitale, e il rendimento crolla in proporzione mentre il
 drawdown scende solo della radice di quanto sarebbe servito.
 
-**La leva risolve più di quanto questa sezione diceva — correzione del
-2026-09-15.** La versione precedente affermava che il MAR è invariante di scala,
+**La leva NON risolve, ma non per la ragione che questa sezione dava — due
+correzioni successive, 2026-09-15.** La versione precedente affermava che il MAR è invariante di scala,
 che raddoppiare l'esposizione raddoppia CAGR *e* drawdown, e che un portafoglio a
 MAR 0.61 leverato resta a 0.61. **È falso, ed è stato misurato falso.** Vedi la
 sezione "La leva, e perché il confronto a rischio 1% non era alla pari" più sotto:
 il MAR sale con la dimensione della posizione fino a un massimo e poi ridiscende.
-Quel che resta vero è la frase che precede — il portafoglio non fabbrica
-rendimento — ma la leva non è neutra come qui si diceva, e il confronto fra sei e
-quindici a rischio fisso 1% non era un confronto alla pari.
+
+Ma la spiegazione che avevo messo al suo posto era a sua volta sbagliata.
+`results/risk_walkforward.md` separa le due cose: sotto **leva pura** — stessi
+trade, rendimenti moltiplicati per k — lo Sharpe resta **esattamente costante a
+1.18** e il MAR sale da 0.89 a 1.22, quindi quella salita è **interamente
+l'artefatto di misura**, e la leva non regala niente. Lo Sharpe sale davvero solo
+alzando `risk_pct` dentro il motore, e sale perché sopra il 2% il tetto sul
+capitale morde su gran parte dei trade e il sizing proporzionale all'ATR viene
+sostituito da un sizing a nozionale costante: a rischio 8%, 142 trade su 178.
+
+Quindi: il portafoglio non fabbrica rendimento (vero), la leva non lo fabbrica
+nemmeno (vero, e la prima correzione lo negava), e il confronto fra sei e quindici
+a rischio fisso 1% resta comunque non alla pari, perché i due universi stanno in
+punti diversi della curva del *sizing*.
 
 **Pesare di più gli strumenti che funzionano è selezione.** È l'unica cosa che
 alzerebbe il MAR, ed è esattamente ciò che il progetto ha passato ventidue
@@ -177,7 +188,10 @@ MAR di portafoglio al variare del rischio per trade, solo long, stessi segnali:
 | 16% e oltre | 1.44 | 1.32 | 0.22 |
 
 Il MAR non è invariante: sale, ha un massimo intorno al 4-8% di rischio per
-trade, poi ridiscende. È la curva della *optimal f*, e ignorarla era un errore.
+trade, poi ridiscende. Somiglia alla curva della *optimal f*, ma non lo è — la
+decomposizione in `results/risk_walkforward.md` mostra che è per metà artefatto di
+misura e per metà un cambio di regola di sizing. Ignorarla era comunque un
+errore.
 
 **Perché sale.** Con sizing a frazione fissa, una sequenza di perdite consuma il
 capitale geometricamente — `(1−r)^n`, non `n·r` — quindi il drawdown *in
@@ -239,6 +253,9 @@ Il numero utilizzabile di questa sezione non è "il 4% è meglio dell'1%". È: *
 MAR di questo progetto vanno confrontati solo a parità di rischio per trade, e il
 rischio per trade è un parametro libero che nessuno ha ottimizzato — per scelta.**
 
+Il seguito, con la validazione fuori campione di quel 4% e la scoperta di cosa
+stia davvero cambiando, è in **`results/risk_walkforward.md`**.
+
 ## Limiti dichiarati
 
 1. **Undici anni sono un periodo, non un campione di periodi.** Il 2015-2026 è
@@ -275,7 +292,7 @@ rischio per trade è un parametro libero che nessuno ha ottimizzato — per scel
 ## Riproduzione
 
 ```bash
-python3 -m pytest tests/ -q                            # 85 test
+python3 -m pytest tests/ -q                            # 92 test
 python3 scripts/run_benchmark.py --universe core       # i sei, 0.87
 python3 scripts/run_benchmark.py --universe extended   # i quindici, 0.61
 python3 scripts/run_benchmark.py --universe no-crypto  # i tredici, 0.17 solo long
