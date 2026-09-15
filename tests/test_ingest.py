@@ -116,3 +116,28 @@ def test_la_barra_di_oggi_non_viene_ingerita():
     assert esito2.aggiunte == 1
     assert esito2.scartate_non_chiuse == []
     assert pd.Timestamp("2026-09-15") in unito2.index
+
+
+def test_il_registro_si_rifiuta_di_scrivere_serie_disallineate():
+    """Un aggiornamento parziale non deve poter entrare nel registro.
+
+    E' l'incidente tipico di un giro manuale: una chiamata al connector
+    fallisce e un asset resta indietro. Le righe resterebbero valide una per
+    una, ma il registro no — confrontare una decisione su dati di lunedi' con
+    una su dati di giovedi' non vuol dire niente, e nulla nel file direbbe che
+    e' successo.
+    """
+    from engine import forward
+
+    def s(fino):
+        idx = pd.date_range("2026-09-01", fino, freq="D")
+        return pd.DataFrame({c: np.ones(len(idx)) for c in ingest.COLONNE}, index=idx)
+
+    allineate = {"BTC": s("2026-09-14"), "GOLD": s("2026-09-14")}
+    forward.verifica_allineamento(allineate)          # non solleva
+    assert set(forward.allineamento(allineate).values()) == {"2026-09-14"}
+
+    storte = {"BTC": s("2026-09-14"), "GOLD": s("2026-09-09")}
+    with pytest.raises(forward.SerieDisallineate) as e:
+        forward.verifica_allineamento(storte)
+    assert "GOLD" in str(e.value) and "2026-09-09" in str(e.value)

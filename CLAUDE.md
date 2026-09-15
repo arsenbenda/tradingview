@@ -8,7 +8,7 @@ perché TradingView non espone API per lo Strategy Tester.
 
 ```bash
 pip install pandas numpy pytest
-python3 -m pytest tests/ -q                      # 112 test, devono passare tutti
+python3 -m pytest tests/ -q                      # 113 test, devono passare tutti
 python3 scripts/run_benchmark.py                 # benchmark, i sei asset
 python3 scripts/run_benchmark.py --universe extended   # gli stessi parametri sui quindici
 python3 scripts/run_benchmark.py --universe no-crypto  # i tredici senza BTC ed ETH
@@ -23,6 +23,26 @@ python3 scripts/run_parity.py --xlsx data/tradingview/*.xlsx   # motore contro S
 python3 scripts/update_data.py                   # fonde le barre fresche da data/staging/
 python3 scripts/run_forward.py                   # registra le decisioni di oggi (append-only)
 ```
+
+## Il giro settimanale
+
+L'unica cosa ricorrente che il progetto chiede. Serve ad alimentare il registro
+forward, che è l'unico out-of-sample non contaminato disponibile (questione 5).
+
+```bash
+python3 scripts/settimana.py            # dice cosa chiedere, asset per asset
+# [si chiedono le serie ai connector in sessione e si salvano in data/staging/<ASSET>.csv]
+python3 scripts/settimana.py --fondi    # fonde, valida, controlla l'allineamento, registra
+```
+
+Il manifesto delle fonti sta dentro `settimana.py`: **la fonte è parte del
+dato**, e scritta nel codice non cambia per distrazione in una mattina di
+fretta. Le richieste partono cinque giorni prima dell'ultima barra in archivio —
+il tratto sovrapposto è quello che fa vedere a `ingest` se il fornitore ha
+rettificato qualcosa; senza, una rettifica passerebbe inosservata.
+
+Saltare una settimana non rompe niente: le barre mancanti entrano al giro
+successivo. Saltarne molte lo dice il sorvegliante.
 
 I dati sono già in `data/raw/`, puliti e verificati. Non serve rete per
 rieseguire nulla.
@@ -411,6 +431,18 @@ Non ripetere questi test senza una ragione nuova.
    `data/staging/<ASSET>.csv`; `update_data.py` fa il resto. Automatizzarlo
    davvero richiede chiavi API, ed è una decisione con un costo: legarsi a un
    fornitore per asset in modo permanente.
+
+   **La cadenza scelta è settimanale, manuale** (`scripts/settimana.py`, e la
+   sezione «Il giro settimanale» qui sopra). Per un registro che comincerà a dire
+   qualcosa fra qualche centinaio di barre, una volta a settimana basta.
+
+   Un guardiano in più che serve proprio al giro manuale: **il registro rifiuta
+   di scrivere se le serie non finiscono tutte lo stesso giorno**
+   (`forward.verifica_allineamento`). È l'incidente tipico di una procedura a
+   mano — una chiamata al connector fallisce e un asset resta indietro: le righe
+   resterebbero valide una per una, ma confrontare una decisione su dati di
+   lunedì con una su dati di giovedì non vuol dire niente, e nulla nel file lo
+   direbbe.
 
    Il sorvegliante si accorge del digiuno da solo («registro fermo da N giorni»,
    dopo cinque), che è insieme la prova che il meccanismo funziona e la misura di

@@ -47,6 +47,11 @@ def main() -> int:
     if not args.solo_controlli:
         universe = {k: v[v.index >= data.DEFAULT_START]
                     for k, v in data.load_universe().items()}
+        try:
+            forward.verifica_allineamento(universe)
+        except forward.SerieDisallineate as e:
+            print(f"AGGIORNAMENTO INCOMPLETO\n\n{e}")
+            return 1
         decisioni = [
             forward.decide(
                 nome, df, donchian.DonchianWithExit(exit_mode="canale"),

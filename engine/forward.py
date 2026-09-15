@@ -168,6 +168,38 @@ def decide(asset: str, df: pd.DataFrame, strategy: backtest.Strategy,
                     esecuzione_attesa="nessuna")
 
 
+class SerieDisallineate(RuntimeError):
+    """Gli asset non arrivano tutti allo stesso giorno."""
+
+
+def allineamento(universe: dict[str, pd.DataFrame]) -> dict[str, str]:
+    """Ultima barra di ogni asset. Se non coincidono, il registro non va scritto.
+
+    Un aggiornamento parziale — una chiamata al connector fallita, un asset
+    dimenticato — farebbe registrare BTC al 14 e GOLD al 9 nella stessa
+    esecuzione. Le righe resterebbero valide una per una e il registro nel suo
+    insieme no: confrontare una decisione su dati di lunedì con una su dati di
+    giovedì non vuol dire niente, e nulla nel file direbbe che è successo.
+
+    Restituisce la mappa asset → ultima data. Chi scrive decide se fermarsi.
+    """
+    return {n: str(df.index[-1].date()) for n, df in universe.items()}
+
+
+def verifica_allineamento(universe: dict[str, pd.DataFrame]) -> None:
+    """Solleva se gli asset non finiscono tutti sullo stesso giorno."""
+    date = allineamento(universe)
+    distinte = sorted(set(date.values()))
+    if len(distinte) > 1:
+        indietro = {n: d for n, d in date.items() if d != max(distinte)}
+        raise SerieDisallineate(
+            f"le serie non finiscono tutte lo stesso giorno: {', '.join(distinte)}.\n"
+            f"Indietro: {', '.join(f'{n} ({d})' for n, d in sorted(indietro.items()))}.\n\n"
+            "Scrivere adesso metterebbe nel registro decisioni prese su giorni diversi, "
+            "senza che nulla nel file lo dica. Completare l'aggiornamento e riprovare."
+        )
+
+
 # ---------------------------------------------------------------- persistenza
 
 class RiscritturaRifiutata(RuntimeError):
