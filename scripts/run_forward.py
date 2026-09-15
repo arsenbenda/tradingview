@@ -20,13 +20,16 @@ import argparse
 import pathlib
 import sys
 
+import pandas as pd
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from engine import costs as cost_table, data, forward
+from engine import costs as cost_table, data, forward, proposals
 from engine.strategies import donchian
 
 RADICE = pathlib.Path(__file__).resolve().parent.parent
 REGISTRO = RADICE / "data" / "forward" / "decisioni.jsonl"
+CODA = RADICE / "data" / "forward" / "proposte.jsonl"
 
 CAPITALE = 100_000.0
 RISCHIO = 0.01
@@ -37,6 +40,7 @@ def main() -> int:
     ap.add_argument("--registro", type=pathlib.Path, default=REGISTRO)
     ap.add_argument("--solo-controlli", action="store_true",
                     help="non scrive: legge il registro e segnala le anomalie")
+    ap.add_argument("--coda", type=pathlib.Path, default=CODA)
     ap.add_argument("--silenzio-giorni", type=int, default=90)
     args = ap.parse_args()
 
@@ -67,8 +71,22 @@ def main() -> int:
         print(f"\n{len(problemi)} anomalia/e da guardare:")
         for p in problemi:
             print(f"  - {p}")
+
+        # Le anomalie diventano proposte VUOTE: il sorvegliante sa dire che
+        # qualcosa non torna, non cosa cambiare. Nessuna si applica da sola.
+        oggi = str(pd.Timestamp.now().date())
+        nuove = sum(proposals.proponi(args.coda, p)
+                    for p in proposals.da_anomalie(problemi, quando=oggi))
+        aperte = proposals.aperte(args.coda)
+        print(f"\ncoda proposte: {args.coda}")
+        print(f"  {nuove} nuova/e, {len(aperte)} aperta/e in totale. "
+              f"Nessuna si applica da sola: vanno compilate e decise a mano.")
         return 1
+
     print("nessuna anomalia.")
+    aperte = proposals.aperte(args.coda)
+    if aperte:
+        print(f"restano {len(aperte)} proposta/e aperte in {args.coda}")
     return 0
 
 

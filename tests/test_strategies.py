@@ -250,3 +250,77 @@ def test_la_posizione_aperta_a_fine_serie_non_esce_con_quantita_zero(daily):
     if res.open_position is not None:
         assert res.open_position.qty > 0
         assert res.open_position.exit_date is None
+
+
+# ------------------------------------------------------------ coda proposte
+
+def test_una_proposta_non_puo_applicarsi_da_sola(tmp_path):
+    """Non esiste una funzione che accetti e modifichi: sono due gesti.
+
+    È il vincolo centrale della coda. Un sorvegliante che aggiusta i parametri
+    viola la regola 6, rende non validabile ciò che esegue e sbaglia il
+    tempismo — taglia l'esposizione dopo la perdita. Qui la diagnosi può
+    diventare modifica solo passando da una decisione umana.
+    """
+    from engine import proposals
+
+    assert not hasattr(proposals, "applica")
+    firme = [n for n in dir(proposals) if not n.startswith("_")]
+    assert "accetta" in firme and "respingi" in firme
+
+
+def test_accettare_richiede_di_nominare_l_ipotesi(tmp_path):
+    """Regola 4: una modifica accettata e non catalogata falsa il DSR di tutte."""
+    from engine import proposals
+
+    coda = tmp_path / "proposte.jsonl"
+    p = proposals.Proposta(id="abc123", creata_il="2026-09-15", origine="sorvegliante",
+                           innesco="CORN: nessuna attività da 400 giorni",
+                           bersaglio="engine/strategies/sanyaku.py",
+                           modifica="alzare min_stop_atr su CORN", motivo="stop troppo stretto")
+    assert proposals.proponi(coda, p) is True
+    assert proposals.proponi(coda, p) is False          # ripetuta: no-op
+
+    with pytest.raises(proposals.ProposteIncoerenti):
+        proposals.accetta(coda, "abc123", da="arsen", quando="2026-09-16", ipotesi="")
+
+    assert proposals.stato(coda)["abc123"]["stato"] == "aperta"
+    proposals.accetta(coda, "abc123", da="arsen", quando="2026-09-16",
+                      ipotesi="stop_floor_per_categoria")
+    assert proposals.stato(coda)["abc123"]["stato"] == "accettata"
+    assert proposals.stato(coda)["abc123"]["decisione"]["ipotesi"] == "stop_floor_per_categoria"
+
+
+def test_una_decisione_presa_non_si_sovrascrive(tmp_path):
+    """Lo storico è append-only: ripensarci apre una proposta nuova."""
+    from engine import proposals
+
+    coda = tmp_path / "proposte.jsonl"
+    p = proposals.Proposta(id="x1", creata_il="2026-09-15", origine="sorvegliante",
+                           innesco="i", bersaglio="b", modifica="m", motivo="r")
+    proposals.proponi(coda, p)
+    proposals.respingi(coda, "x1", da="arsen", quando="2026-09-16", motivo="già escluso")
+
+    with pytest.raises(proposals.ProposteIncoerenti):
+        proposals.accetta(coda, "x1", da="arsen", quando="2026-09-17", ipotesi="qualcosa")
+    with pytest.raises(proposals.ProposteIncoerenti):
+        proposals.respingi(coda, "ignoto", da="arsen", quando="2026-09-17", motivo="x")
+
+    assert proposals.stato(coda)["x1"]["stato"] == "respinta"
+    assert proposals.aperte(coda) == []
+
+
+def test_le_proposte_dalle_anomalie_nascono_vuote(tmp_path):
+    """Il sorvegliante sa dire che qualcosa non torna, non cosa cambiare.
+
+    Un testo generato che *sembra* una diagnosi è peggio di un campo in bianco,
+    perché invita ad accettarlo senza guardarci.
+    """
+    from engine import proposals
+
+    proposte = proposals.da_anomalie(["CORN: nessuna attività da 400 giorni (dal 2016-05-04)."],
+                                     quando="2026-09-15")
+    assert len(proposte) == 1
+    assert proposte[0].modifica == "(da compilare)"
+    assert proposte[0].motivo == "(da compilare)"
+    assert "CORN" in proposte[0].innesco

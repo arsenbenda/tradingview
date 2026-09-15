@@ -8,7 +8,7 @@ perché TradingView non espone API per lo Strategy Tester.
 
 ```bash
 pip install pandas numpy pytest
-python3 -m pytest tests/ -q                      # 102 test, devono passare tutti
+python3 -m pytest tests/ -q                      # 106 test, devono passare tutti
 python3 scripts/run_benchmark.py                 # benchmark, i sei asset
 python3 scripts/run_benchmark.py --universe extended   # gli stessi parametri sui quindici
 python3 scripts/run_benchmark.py --universe no-crypto  # i tredici senza BTC ed ETH
@@ -125,6 +125,7 @@ engine/
                   NO_CRYPTO (13)
   filters.py      componenti da innestare sul benchmark (catalogo per l'ablazione)
   forward.py      registro append-only delle decisioni + sorveglianza (sola lettura)
+  proposals.py    coda delle proposte: il solo canale da diagnosi a modifica
   hypotheses.py   il catalogo di tutte le ipotesi provate; N_HYPOTHESES entra nel DSR
   validation.py   walk-forward, k-fold purgato con embargo, Deflated Sharpe, bootstrap
   strategies/     donchian (benchmark), sanyaku (v5.5), confluence (v3.2)
@@ -388,9 +389,22 @@ Non ripetere questi test senza una ragione nuova.
      subito prima del recupero.
 
    L'asimmetria è il criterio: **fermare fallisce verso il non fare niente,
-   aggiustare fallisce verso il fare qualcosa che nessuno ha validato.** Una
-   proposta di modifica è legittima, ma va in coda per una decisione umana ed
-   entra nel catalogo delle ipotesi come tutte le altre (regola 4).
+   aggiustare fallisce verso il fare qualcosa che nessuno ha validato.**
+
+   La terza via è costruita: `engine/proposals.py`, la coda. È il solo canale
+   attraverso cui una diagnosi può diventare una modifica, e tre vincoli sono
+   applicati dal codice invece che dalla buona volontà:
+   * **nessuna proposta si applica da sola** — non esiste una funzione che
+     accetti e modifichi, e un test verifica che non esista;
+   * **accettare richiede di nominare l'ipotesi** che entrerà in
+     `hypotheses.CATALOGUE`, perché una modifica accettata e non contata è
+     un'ipotesi provata di nascosto e falsa il DSR di tutte le altre (regola 4);
+   * **una decisione presa non si sovrascrive** — per tornarci sopra si apre una
+     proposta nuova, così resta la traccia di entrambe.
+
+   Le proposte nascono **vuote**: il sorvegliante sa dire che qualcosa non torna,
+   non cosa cambiare, e un testo generato che *sembra* una diagnosi è peggio di un
+   campo in bianco perché invita ad accettarlo senza guardarci.
 
 6. ~~Validare la v5.5 come si è validato tutto il resto~~: **chiusa, con esito
    negativo.** Eseguita il 2026-09-15 con lo stesso identico protocollo del
