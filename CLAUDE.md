@@ -8,7 +8,7 @@ perché TradingView non espone API per lo Strategy Tester.
 
 ```bash
 pip install pandas numpy pytest
-python3 -m pytest tests/ -q                      # 106 test, devono passare tutti
+python3 -m pytest tests/ -q                      # 112 test, devono passare tutti
 python3 scripts/run_benchmark.py                 # benchmark, i sei asset
 python3 scripts/run_benchmark.py --universe extended   # gli stessi parametri sui quindici
 python3 scripts/run_benchmark.py --universe no-crypto  # i tredici senza BTC ed ETH
@@ -20,6 +20,7 @@ python3 scripts/run_validation.py                # walk-forward, k-fold purgato,
 python3 scripts/run_risk_walkforward.py          # il rischio per trade scelto fuori campione
 python3 scripts/validate_series.py               # gate di qualità sui dati
 python3 scripts/run_parity.py --xlsx data/tradingview/*.xlsx   # motore contro Strategy Tester
+python3 scripts/update_data.py                   # fonde le barre fresche da data/staging/
 python3 scripts/run_forward.py                   # registra le decisioni di oggi (append-only)
 ```
 
@@ -125,6 +126,7 @@ engine/
                   NO_CRYPTO (13)
   filters.py      componenti da innestare sul benchmark (catalogo per l'ablazione)
   forward.py      registro append-only delle decisioni + sorveglianza (sola lettura)
+  ingest.py       aggiornamento delle serie: aggiunge barre, non riscrive il passato
   proposals.py    coda delle proposte: il solo canale da diagnosi a modifica
   hypotheses.py   il catalogo di tutte le ipotesi provate; N_HYPOTHESES entra nel DSR
   validation.py   walk-forward, k-fold purgato con embargo, Deflated Sharpe, bootstrap
@@ -388,15 +390,31 @@ Non ripetere questi test senza una ragione nuova.
    `scripts/run_forward.py` registra ogni giorno la decisione e i suoi ingressi
    in `data/forward/decisioni.jsonl`, append-only e firmato.
 
-   **Manca però il carburante, ed è il primo lavoro da fare.** `data/raw/` è
-   statico e finisce al 2026-09-14: rilanciare il runner domani scrive *zero*
-   righe, per sempre. Il registro esiste ma non può accumulare finché non c'è un
-   passo che aggiorna le serie ogni giorno, con `validate_series.py` come gate e
-   **una sola famiglia di fonti per asset** — cambiare fornitore a metà
-   spezzerebbe la confrontabilità delle righe esattamente come la spezza un
-   cambio di configurazione. Il sorvegliante si accorge del digiuno da solo
-   («registro fermo da N giorni», dopo cinque), che è la prova che il meccanismo
-   funziona e insieme la misura di quanto sia inutile senza dati freschi. **Nessun holdout
+   **Il carburante è mezzo costruito** (`engine/ingest.py`,
+   `scripts/update_data.py`). La parte fragile di un aggiornamento quotidiano non
+   è scaricare: è decidere cosa fare quando i dati nuovi contraddicono i vecchi,
+   ed è lì che sta il codice testato. Tre regole, tutte imposte dal codice:
+   * **le barre nuove si aggiungono, le vecchie non si toccano**;
+   * **la barra di oggi non si ingerisce** — una sessione aperta ha prezzi e
+     volume provvisori: verificato sul campo, Twelve Data dà SPY del 2026-09-15
+     con il 2,7% del volume del giorno prima. Scriverla vorrebbe dire registrare
+     una decisione su una barra che domani sarà diversa, e domani leggere quella
+     differenza come una rettifica del passato;
+   * **una rettifica vera del passato ferma l'aggiornamento** (oltre lo 0.5%, la
+     stessa soglia di `extract_av_result.py`): non perché il dato nuovo sia
+     sbagliato, ma perché accettarlo in silenzio cambierebbe retroattivamente
+     decisioni già registrate.
+
+   **Resta manuale il fetch**, e non per dimenticanza: i connector MCP non sono
+   richiamabili da uno script e non ci sono chiavi API in ambiente
+   (`data/README.md`). Le serie fresche si chiedono in sessione e si salvano in
+   `data/staging/<ASSET>.csv`; `update_data.py` fa il resto. Automatizzarlo
+   davvero richiede chiavi API, ed è una decisione con un costo: legarsi a un
+   fornitore per asset in modo permanente.
+
+   Il sorvegliante si accorge del digiuno da solo («registro fermo da N giorni»,
+   dopo cinque), che è insieme la prova che il meccanismo funziona e la misura di
+   quanto sia inutile senza dati freschi. **Nessun holdout
    ritagliato da questo campione è pulito** — è stato guardato tutto, più volte,
    e da un LLM che ha in addestramento l'esito di ogni evento fino al 2026. Quel
    registro è l'unico out-of-sample non contaminato che il progetto possa avere,
