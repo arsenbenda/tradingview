@@ -1,144 +1,129 @@
-# Dati: cosa è disponibile, cosa manca, e perché
+# Dati: fonti, difetti trovati, e cosa usare
 
-Stato al 2026-09-14. Ricognizione fatta via connector MCP (Alpha Vantage,
-Google Drive) e via rete diretta dal container.
+Stato al 2026-09-15, dopo il collegamento dei connector Twelve Data e FMP.
+L'universo a 6 asset eterogenei è **completo e verificato**.
 
-## Matrice di disponibilità
+## Universo di lavoro
 
-| Asset | Fonte | Granularità | OHLC? | Storia | Stato |
-|---|---|---|---|---|---|
-| BTC/USD | Alpha Vantage `DIGITAL_CURRENCY_DAILY` | daily | **sì** | 2013-04-28 → oggi, 4.887 barre | **pronto** |
-| ETH/USD | Alpha Vantage `DIGITAL_CURRENCY_DAILY` | daily | **sì** | 2015-08-08 → oggi, 4.056 barre | **pronto** |
-| BTC, ETH (controllo) | Binance.US REST pubblico | daily | sì | 2019-09 → oggi, ~1.970 barre | **pronto** (script) |
-| Gold (GLD ETF) | Alpha Vantage `TIME_SERIES_WEEKLY` | **weekly** | sì | 2004-11 → oggi, 1.139 barre | parziale |
-| Gold spot (XAU) | Alpha Vantage `GOLD_SILVER_HISTORY` | daily | **no — solo close** | 2011-06 → oggi | **inutilizzabile** |
-| WTI spot | Alpha Vantage `WTI` | daily | **no — solo close** | 1986-01 → oggi, 10.241 barre | **inutilizzabile** |
-| Corn, Wheat, Copper, Sugar… | Alpha Vantage commodities | **monthly** + solo close | no | lunga | **inutilizzabile** |
-| ETF daily (GLD, USO, CORN, UNG, DBA) | Alpha Vantage `TIME_SERIES_DAILY` | daily | sì | `outputsize=full` è **premium**; il piano free dà 100 barre | **bloccato** |
+| Asset | File | Fonte | Barre | Da |
+|---|---|---|---|---|
+| BTC/USD | `BTCUSD_1d.csv` | Alpha Vantage | 4.887 | 2013-04-28 |
+| ETH/USD | `ETHUSD_1d.csv` | Alpha Vantage | 4.056 | 2015-08-08 |
+| Oro (GLD) | `GLD_1d_td.csv` | Twelve Data | 5.000 | 2006-10-26 |
+| Petrolio (USO) | `USO_1d_td.csv` | Twelve Data | 5.000 | 2006-10-26 |
+| Mais (CORN) | `CORN_1d_td.csv` | Twelve Data | 4.091 | 2010-06-09 |
+| Azionario (SPY) | `SPY_1d_td.csv` | Twelve Data | 5.000 | 2006-10-26 |
 
-### Perché "solo close" significa inutilizzabile
+Tutti con OHLCV daily. Periodo comune a tutti e sei: **2015-08-08 → oggi**, circa
+11 anni; escludendo ETH si arriva al 2013.
 
-Non è pignoleria. Tenkan, Kijun e Senkou B sono **midpoint di massimo e minimo**
-su una finestra; l'ATR, che regge stop e sizing, è definito su high/low. Una
-serie di soli close non permette di calcolare nessuno dei tre, né di
-normalizzare Gann in unità ATR. Con i soli close si può testare un sistema a
-medie mobili, non Ichimoku.
+Riferimenti aggiuntivi, non per il backtest: `GC_1d_fmp.csv` (oro futures FMP,
+5.000 barre dal 2007-06-21), `GLD_1w.csv` (weekly, AV), `*_binanceus.csv`
+(**scartati**, vedi sotto), `WTI_spot_1d_CLOSEONLY.csv` (solo close, inutile per
+Ichimoku).
 
-### Percorsi di rete verificati
+## Tre difetti trovati, tutti silenziosi
 
-Testati dal container: Binance globale **451** (geo-block), Yahoo Finance **429**,
-stooq nessuna risposta, CryptoCompare / EODHD / TwelveData / FMP richiedono
-chiave (le chiavi demo sono rifiutate). Funzionano: **Binance.US**, **Kraken**
-(max 720 barre), CoinGecko ping, Alpha Vantage.
+Nessuno di questi produce un errore: ognuno produce un backtest plausibile e
+sbagliato.
 
-Conclusione: **il lato crypto è risolto e riproducibile; il lato
-commodities/indici daily non è ottenibile gratuitamente da qui.**
+### 1. Binance.US ha un buco di 19 mesi — fonte scartata
 
-## Controllo incrociato fra fonti indipendenti
+`2023-07-14 → 2025-02-19`: nessuna barra, e alla ripresa un salto del **284%**
+sul BTC. Corrisponde alla sospensione delle coppie USD su Binance.US dopo la
+perdita dei canali bancari. Una serie del genere, usata come primaria, avrebbe
+fatto operare la strategia su una continuità inesistente e prodotto un singolo
+trade fittizio da tripla cifra. I file restano nel repo solo come promemoria del
+perché la fonte è stata esclusa.
 
-Confronto AV vs Binance.US sui giorni in comune (1.970 barre):
+### 2. FMP duplica le barre nei festivi
 
-| | BTC | ETH |
-|---|---|---|
-| Scarto mediano sul close | 0.095% | 0.168% |
-| Scarto mediano sul high | 0.169% | 0.211% |
-| Giorni con scarto close > 2% | 29 (**1.5%**) | 32 (**1.6%**) |
-| Scarto massimo | 21.2% | 21.4% |
+Su `ESUSD` (E-mini S&P) il 2022-02-21 (Presidents' Day) e il 2022-01-17 (MLK)
+hanno OHLCV **identico al giorno adiacente**, invece di essere omessi. Falsa due
+cose in modo diretto: i conteggi di barre — quindi tutte le finestre temporali
+Ichimoku, che nel Pine attuale lavorano su `bar_index` — e il campione dell'ATR,
+che regge stop e sizing. L'oro FMP non ha il difetto (0 barre copiate su 5.000):
+è specifico dei futures indice.
 
-Le due serie concordano nel caso tipico ma divergono in modo materiale
-sull'1.5% dei giorni. Parte è attribuibile a Binance.US nei primi mesi (nel
-2019 stampa ripetutamente lo stesso valore, es. ETH 213.46 su tre giorni
-consecutivi: prezzo fermo per illiquidità), parte a giornate estreme
-(2020-03-12) dove i venue divergono davvero.
+### 3. Futures ed ETF non hanno lo stesso bar "daily"
 
-**Implicazione operativa, non accademica**: una regola come "il close attraversa
-cloudTop" cambia giorno di attivazione a seconda della fonte su ~1.5% delle
-barre. È lo stesso ordine di grandezza dell'edge che stiamo cercando di
-misurare. Ne segue che il **parity test contro il Pine ha senso solo se entrambi
-i lati usano lo stesso feed** — quindi l'export CSV da TradingView non è un
-ripiego, è la fonte corretta per quel test specifico.
+Correlazione dei rendimenti log giornalieri fra oro futures (FMP) e GLD (Twelve
+Data), 4.838 giorni comuni: **0.8814**. Le volatilità annualizzate coincidono
+(18.5% vs 18.2%), quindi non è un problema di scala: i due bar chiudono a orari
+diversi (sessione CME ~17:00 ET contro chiusura NYSE 16:00 ET) e misurano
+finestre di 24 ore sfalsate.
 
-## File
+Per confronto, sullo stesso test BTC fra Alpha Vantage e Twelve Data dà
+**+0.9912** same-day, e −0.03 / −0.05 con uno shift di ±1 giorno: convenzione
+identica, allineamento corretto.
 
-```
-data/raw/BTCUSD_1d.csv                  OHLCV daily, Alpha Vantage
-data/raw/ETHUSD_1d.csv                  OHLCV daily, Alpha Vantage
-data/raw/BTCUSD_1d_binanceus.csv        OHLCV daily, Binance.US (controllo)
-data/raw/ETHUSD_1d_binanceus.csv        OHLCV daily, Binance.US (controllo)
-data/raw/GLD_1w.csv                     OHLCV weekly, Alpha Vantage
-data/raw/WTI_spot_1d_CLOSEONLY.csv      solo close — non usare per Ichimoku
-```
+**Regola che ne segue: una sola famiglia di fonti per backtest.** Mescolare
+futures FMP ed ETF Twelve Data in un portafoglio fabbrica lead-lag inesistenti e
+falsa qualsiasi timing di segnale cross-asset. Resta un disallineamento
+inevitabile e reale fra crypto (bar che chiude a 00:00 UTC) ed ETF (20:00/21:00
+UTC): non è un difetto dei dati, è una proprietà dei mercati, e va tenuta
+presente quando si aggregano i rendimenti a livello di portafoglio.
 
-Pulizia applicata in `scripts/extract_av_result.py`: ordine cronologico
-crescente, scarto delle barre piatte a volume nullo (1.017 righe eliminate su
-BTC, tutto il periodo 2010-2013 di quotazione illiquida in cui
-open=high=low=close), scarto delle righe che violano `low <= open,close <= high`.
+## Gate di qualità
 
-Verifiche: BTC 0 duplicati, 1 solo giorno mancante (2013-08-07), copertura 100%.
-ETH 0 duplicati, 0 buchi.
+`scripts/validate_series.py` va eseguito su ogni serie prima di usarla. Controlla
+date duplicate, barre copiate dalla precedente, OHLC incoerente
+(`low <= open,close <= high`), prezzi non positivi, interruzioni oltre il ponte
+festivo, e gap `|open − close precedente|` oltre il 10%.
+
+Esito attuale sull'universo di lavoro: le sei serie passano. Restano segnalati,
+e sono **eventi di mercato reali, non difetti**: 9 gap oltre il 10% su USO nel
+2020 (crollo del petrolio, massimo 22% il 2020-03-09), un gap del 12% su CORN
+nel 2010 (illiquidità dei primi mesi dell'ETF), un gap del 10% su SPY il
+2020-03-16.
+
+## Perimetro delle fonti
+
+### Twelve Data — fonte primaria per tutto ciò che non è crypto
+800 crediti/giorno, 8/minuto. Storia daily completa dalla prima quotazione;
+`outputsize` massimo 5.000 barre per chiamata, si pagina con
+`start_date`/`end_date`. **Gli indici non sono coperti** (SPX, DJI, NDX): si usa
+l'ETF proxy, che è comunque la scelta giusta perché l'ETF **è** la serie
+tradabile e il costo del roll è già incorporato.
+
+### Alpha Vantage — solo crypto
+Verificato endpoint per endpoint: `DIGITAL_CURRENCY_DAILY` e
+`TIME_SERIES_WEEKLY` sono liberi con storia completa e OHLCV. Sono premium
+`TIME_SERIES_DAILY outputsize=full`, `TIME_SERIES_DAILY_ADJUSTED` e
+`INDEX_DATA`. `FX_DAILY` rifiuta `XAU/USD`. Le commodities sono libere ma **solo
+close**, e le agricole solo monthly. Per le crypto è la fonte migliore: più
+storia di Twelve Data (BTC dal 2013 contro 2017) e convenzione allineata.
+
+### FMP — solo riferimento
+40 simboli futures con OHLCV dal 1998, ma su questo piano le autorizzazioni sono
+**per simbolo**: `GCUSD` ed `ESUSD` passano, `CLUSD` e `ZCUSX` rispondono
+`ACCESS DENIED`. Massimo 5.000 barre per chiamata. Con il difetto dei festivi e
+la convenzione oraria diversa, resta utile solo per confronti, non come fonte di
+un backtest.
+
+### Non utilizzabili
+Bigdata.com `market_tearsheet` (snapshot con variazioni %, non serie storica),
+Crypto.com (crypto, già coperto meglio), Binance globale 451 da questo
+container, Yahoo 429, stooq nessuna risposta, CryptoCompare/EODHD/TwelveData
+REST/FMP REST richiedono chiave.
 
 ## Riproducibilità
 
-- `scripts/fetch_binanceus.py BTCUSD ETHUSD` — ricostruisce i file Binance.US da
-  zero, nessuna chiave richiesta, paginazione automatica.
-- I file Alpha Vantage arrivano dal connector MCP, che non è richiamabile da uno
-  script: `scripts/extract_av_result.py` normalizza il risultato salvato su
-  disco. Le risposte grandi espongono anche un `data_url` su
-  `cdn.alphavantage.co`, scaricabile con curl.
+- `scripts/extract_av_result.py <tool_result> <out.csv> [--ohlc|--close]` —
+  normalizza i risultati MCP salvati su disco (Alpha Vantage e Twelve Data, il
+  separatore è rilevato dall'header): ordine crescente, scarto delle barre
+  piatte a volume nullo e di quelle con OHLC incoerente.
+- `scripts/extract_fmp_result.py <tool_result> <out.csv>` — stessa cosa per il
+  JSON di FMP.
+- `scripts/fetch_binanceus.py` — resta per riferimento storico; la fonte è
+  scartata.
+- `scripts/validate_series.py` — il gate, da eseguire sempre.
 
-## Server MCP: ricognizione del registry
+I connector MCP non sono richiamabili da uno script: le serie vengono richieste
+in sessione e i risultati grandi, salvati automaticamente su disco, vengono
+normalizzati dagli extractor. Le risposte Alpha Vantage espongono anche un
+`data_url` su `cdn.alphavantage.co`, scaricabile con curl.
 
-Verificato se un altro connector MCP risolve il buco sulle commodities daily.
-
-### Perimetro esatto del piano Alpha Vantage free
-
-Testato endpoint per endpoint, non dedotto:
-
-| Endpoint | Esito |
-|---|---|
-| `DIGITAL_CURRENCY_DAILY` | **libero, storia completa, OHLCV** |
-| `TIME_SERIES_WEEKLY` | **libero, storia completa, OHLCV** |
-| `TIME_SERIES_DAILY` `outputsize=full` | premium (il free dà 100 barre) |
-| `TIME_SERIES_DAILY_ADJUSTED` | premium |
-| `INDEX_DATA` (SPX, DAX, indici) | premium — "not yet entitled to index data access" |
-| `FX_DAILY` con `XAU/USD` | rifiutato: XAU non è nella lista FX di Alpha Vantage |
-| commodities (`WTI`, `CORN`, …) | libere ma **solo close**, e le agricole solo monthly |
-
-Quindi su Alpha Vantage il daily OHLC esiste solo per le crypto. Il resto
-richiede il piano premium.
-
-### Altri connector già collegati
-
-- **Bigdata.com** `market_tearsheet`: prezzo corrente e variazioni % su
-  1D/5D/1M/3M/6M/YTD/1Y, comprese commodities. È uno snapshot, **non una serie
-  storica** — inutilizzabile per un backtest.
-- **Crypto.com** `get_market_candles`: OHLCV crypto a intervalli, ma limitato
-  per numero di barre. Il lato crypto è già coperto meglio da Alpha Vantage.
-
-### Candidati che risolverebbero, da collegare su claude.ai
-
-| Server | Free tier | Storia daily | Giudizio |
-|---|---|---|---|
-| **Twelve Data** | 800 crediti/giorno, 8/min | **storia completa** dalla prima data di quotazione su intervalli daily/weekly/monthly | **prima scelta**; da verificare la copertura ETF sul piano free, che la documentazione lega ai piani superiori |
-| **FMP** | 250 chiamate/giorno, EOD, 500MB/30gg | **~5 anni** | simboli commodities diretti (`GCUSD` oro, `CLUSD` crude) senza passare dagli ETF, ma 5 anni non coprono più di un regime |
-| **CoinDesk** | — | OHLCV crypto e indici | `connect_incomplete`; crypto già coperto |
-
-Nessuno dei due può essere collegato da qui: l'autorizzazione va fatta
-dall'utente su claude.ai.
-
-## Cosa serve per sbloccare le commodities
-
-Tre opzioni, in ordine di preferenza:
-
-1. **Export CSV daily da TradingView** per i simboli target. Gratis, ed è lo
-   stesso feed su cui girerà il Pine — rende il parity test esatto invece che
-   approssimato. È anche l'unica opzione che elimina il problema del
-   back-adjustment, perché si esporta la serie che si vede a schermo.
-2. **Chiave Alpha Vantage premium** (~50 USD/mese): sblocca
-   `TIME_SERIES_DAILY outputsize=full`, quindi OHLC daily su GLD, USO, CORN,
-   UNG, DBA e indici. Da mettere come secret dell'ambiente, non nel repo.
-3. **ETF come proxy** invece dei futures continui — da adottare in ogni caso,
-   indipendentemente dalla fonte: il prezzo dell'ETF **è** la serie tradabile,
-   quindi il costo del roll è già incorporato e il problema del
-   back-adjustment dei contratti continui non esiste. Per un sistema retail è
-   anche più realistico dei futures.
+Pulizia applicata: su BTC sono state eliminate 1.017 righe del periodo 2010-2013
+in cui `open=high=low=close` con volume nullo, cioè quotazione illiquida senza
+scambi reali.

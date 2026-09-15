@@ -6,6 +6,9 @@ client come JSON ({"result": "<csv>"} oppure una busta di preview con
 sample_data/data_url). Questo script normalizza: ordine cronologico
 crescente, header canonico, righe non valide scartate.
 
+Il separatore viene rilevato dall'header: virgola per Alpha Vantage, punto e
+virgola per Twelve Data.
+
 Uso: extract_av_result.py <file_tool_result.json> <out.csv> [--ohlc|--close]
 """
 import json
@@ -33,7 +36,9 @@ def main():
         print(f"ATTENZIONE: {src} e' una preview troncata, non i dati completi")
 
     lines = [ln for ln in text.splitlines() if ln.strip()]
-    rows = [ln.split(",") for ln in lines[1:]]
+    # Alpha Vantage separa con virgola, Twelve Data con punto e virgola
+    sep = ";" if lines[0].count(";") > lines[0].count(",") else ","
+    rows = [ln.split(sep) for ln in lines[1:]]
 
     out, dropped = [], 0
     for r in rows:
