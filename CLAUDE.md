@@ -8,8 +8,9 @@ perché TradingView non espone API per lo Strategy Tester.
 
 ```bash
 pip install pandas numpy pytest
-python3 -m pytest tests/ -q                      # 70 test, devono passare tutti
-python3 scripts/run_benchmark.py                 # benchmark di riferimento
+python3 -m pytest tests/ -q                      # 85 test, devono passare tutti
+python3 scripts/run_benchmark.py                 # benchmark, i sei asset
+python3 scripts/run_benchmark.py --universe extended   # gli stessi parametri sui quindici
 python3 scripts/compare_strategies.py            # v3.2 e v5.5 contro il benchmark
 python3 scripts/run_ablation.py                  # quali componenti aggiungono valore
 python3 scripts/run_ichimoku_tests.py            # Ichimoku come segnale e come uscita
@@ -38,6 +39,11 @@ sopravvive alla validazione fuori campione** (`results/validation.md`): il
 miglior candidato ha un Deflated Sharpe di 0.025 sul differenziale contro il
 benchmark, e la procedura che lo seleziona vale −0.04 di MAR fuori campione.
 Dopo ventidue ipotesi, il benchmark è ancora la cosa più difficile da battere.
+
+E il benchmark stesso, allargato a quindici strumenti, è **un risultato crypto**
+(`results/universe_extended.md`): stesso segnale e stessi parametri su un universo
+davvero eterogeneo fanno **MAR 0.61** contro 0.87, perché solo BTC ed ETH hanno un
+vantaggio e nove strumenti su quindici sono negativi anche a costi zero.
 
 ## Regole di lavoro che hanno prodotto questi risultati
 
@@ -74,7 +80,7 @@ engine/
   backtest.py     motore bar-by-bar: segnale su t, fill su t+1, uscite parziali
   metrics.py      MAR, Sharpe, Sortino, PF, aggregazione di portafoglio
   costs.py        costi per asset, in percentuale (non in tick)
-  data.py         caricamento con controlli bloccanti
+  data.py         caricamento con controlli bloccanti; CORE (6) ed EXTENDED (15)
   filters.py      componenti da innestare sul benchmark (catalogo per l'ablazione)
   hypotheses.py   il catalogo di tutte le ipotesi provate; N_HYPOTHESES entra nel DSR
   validation.py   walk-forward, k-fold purgato con embargo, Deflated Sharpe, bootstrap
@@ -82,7 +88,8 @@ engine/
 scripts/          runner riproducibili + estrattori dati + gate di qualità
 strategies/       i due Pine originali, invariati
 results/          benchmark_donchian.md, comparison.md, ablation.md,
-                  ichimoku_tests.md, validation.md
+                  ichimoku_tests.md, validation.md, universe_extended.md
+data/universe_declaration.md   la lista dei quindici, dichiarata prima dei dati
 research/         state-of-the-art.md — ricognizione della letteratura
 data/README.md    fonti, difetti trovati, perimetro dei connector
 ```
@@ -138,6 +145,12 @@ Non ripetere questi test senza una ragione nuova.
   vantaggio non è distinguibile dal miglior rumore di ventidue tentativi — DSR
   0.025, PSR 0.829, IC 95% sul delta di MAR [−0.31, +0.82]. Va descritto come
   *non falsificato*, mai come confermato.
+* **Il portafoglio come leva di rendimento.** Allargare da sei a quindici
+  strumenti dimezza il drawdown (8.9% → 4.1%) ma taglia il CAGR di due terzi
+  (7.7% → 2.5%): il MAR **scende** a 0.61. La diversificazione riduce il rischio,
+  non fabbrica rendimento, e con capitale equipesato ogni strumento senza
+  vantaggio diluisce quelli che ce l'hanno. La leva non recupera niente, perché il
+  MAR è invariante di scala. Vale in tutti e tre gli scenari di costo e direzione.
 * **Cercare la ventitreesima ipotesi su questi dati.** Ogni ipotesi in più alza
   la soglia del DSR per tutte le precedenti: da N = 22 a N = 40 la soglia passa
   da 0.85 a 0.96 di Sharpe annuo. Continuare a cercare su questo campione rende
@@ -165,11 +178,23 @@ Non ripetere questi test senza una ragione nuova.
    vero. `cloud_exit` resta utilizzabile — non fa mai danni — ma come ipotesi
    **non falsificata**, non come risultato.
 
-2. **Portafoglio invece che segnale.** Il drawdown scende da 38.7% del peggior
-   asset singolo a 8.9% di portafoglio a parità di segnale. Dopo la validazione
-   è l'unica leva rimasta con un effetto più grande della sua incertezza: vale
-   più di qualunque delta fra le ventidue varianti, e non dipende da una
-   selezione. Con 15-20 strumenti e vol targeting scende ancora.
+2. ~~Portafoglio invece che segnale~~: **chiuso, con esito negativo**
+   (`results/universe_extended.md`). Era l'ultima leva che sembrava funzionare, ed
+   era l'unica non ancora misurata. Misurata, fa così:
+
+   | | sei | quindici |
+   |---|---|---|
+   | MAR | **0.87** | **0.61** |
+   | Sharpe | 1.39 | 0.85 |
+   | CAGR | 7.7% | 2.5% |
+   | maxDD | 8.9% | **4.1%** |
+
+   Il drawdown scende come previsto; il rendimento crolla, perché **due strumenti
+   su quindici hanno un vantaggio e sono le due crypto**. Gli altri tredici stanno
+   fra −2.0% e +2.6% di CAGR, e restano negativi anche azzerando i costi. Lo 0.87
+   contro cui sono state misurate tutte e ventidue le ipotesi non è la performance
+   di un trend follower multi-asset: è BTC ed ETH con quattro strumenti quasi
+   neutri intorno.
 
 3. **Parity test contro il Pine.** Mai eseguito, e ora l'unica verifica aperta
    che non richieda di cercare un vantaggio nuovo. Richiede export CSV da

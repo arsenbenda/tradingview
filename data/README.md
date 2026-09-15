@@ -1,9 +1,15 @@
 # Dati: fonti, difetti trovati, e cosa usare
 
-Stato al 2026-09-15, dopo il collegamento dei connector Twelve Data e FMP.
-L'universo a 6 asset eterogenei è **completo e verificato**.
+Stato al 2026-09-15, dopo il collegamento dei connector Twelve Data e FMP e
+l'allargamento dell'universo da sei a quindici strumenti
+(`data/universe_declaration.md`).
 
 ## Universo di lavoro
+
+Due liste, entrambe in `engine/data.py`. **`CORE`**, i sei su cui sono stati
+prodotti tutti i risultati fino al 2026-09-15, resta il default di
+`load_universe` perché cambiarlo renderebbe irriproducibili report già commessi.
+**`EXTENDED`**, i quindici, si chiede per nome.
 
 | Asset | File | Fonte | Barre | Da |
 |---|---|---|---|---|
@@ -14,15 +20,30 @@ L'universo a 6 asset eterogenei è **completo e verificato**.
 | Mais (CORN) | `CORN_1d_td.csv` | Twelve Data | 4.091 | 2010-06-09 |
 | Azionario (SPY) | `SPY_1d_td.csv` | Twelve Data | 5.000 | 2006-10-26 |
 
-Tutti con OHLCV daily. Periodo comune a tutti e sei: **2015-08-08 → oggi**, circa
-11 anni; escludendo ETH si arriva al 2013.
+I nove aggiunti il 2026-09-15, tutti Twelve Data, tutti scaricati dal 2013-01-01:
+
+| Asset | Nome logico | File | Barre | Settore |
+|---|---|---|---|---|
+| EFA | `EQUITY_INTL` | `EFA_1d_td.csv` | 3.445 | azionario sviluppati ex-USA |
+| VWO | `EQUITY_EM` | `VWO_1d_td.csv` | 3.445 | azionario emergenti |
+| TLT | `BOND_LONG` | `TLT_1d_td.csv` | 3.445 | duration USA 20+ anni |
+| HYG | `BOND_HY` | `HYG_1d_td.csv` | 3.445 | credito high yield |
+| UUP | `USD` | `UUP_1d_td.csv` | 3.445 | dollaro |
+| FXY | `JPY` | `FXY_1d_td.csv` | 3.445 | yen |
+| SLV | `SILVER` | `SLV_1d_td.csv` | 3.445 | argento |
+| UNG | `NATGAS` | `UNG_1d_td.csv` | 3.445 | gas naturale |
+| VNQ | `REIT` | `VNQ_1d_td.csv` | 3.445 | immobiliare USA |
+
+Tutti con OHLCV daily. Il periodo comune ai quindici resta **2015-08-08 → oggi**,
+circa 11 anni, vincolato da ETH: tutti e nove i nuovi quotano da prima.
+Escludendo ETH si arriverebbe al 2013.
 
 Riferimenti aggiuntivi, non per il backtest: `GC_1d_fmp.csv` (oro futures FMP,
 5.000 barre dal 2007-06-21), `GLD_1w.csv` (weekly, AV), `*_binanceus.csv`
 (**scartati**, vedi sotto), `WTI_spot_1d_CLOSEONLY.csv` (solo close, inutile per
 Ichimoku).
 
-## Tre difetti trovati, tutti silenziosi
+## Quattro difetti trovati, tutti silenziosi
 
 Nessuno di questi produce un errore: ognuno produce un backtest plausibile e
 sbagliato.
@@ -57,6 +78,34 @@ Per confronto, sullo stesso test BTC fra Alpha Vantage e Twelve Data dà
 **+0.9912** same-day, e −0.03 / −0.05 con uno shift di ±1 giorno: convenzione
 identica, allineamento corretto.
 
+### 4. Twelve Data restituisce EEM due volte, con aperture diverse
+
+Richiesto EEM dal 2013-01-01, la risposta contiene **4.939 righe per 3.445 date**:
+ogni giorno di contrattazione dal 2013 al 2021 compare due volte, esattamente 332
+volte l'anno, e dal 2022 il fenomeno sparisce. Il filtro `mic_code=ARCX` non
+cambia nulla, quindi non sono due borse: sono due pagine sovrapposte della stessa
+richiesta.
+
+Nella quasi totalità dei casi le due righe sono la stessa barra arrotondata in
+modo diverso — divergenza massima sul close **0.088%**, su 56 date. Ma su **4
+date l'apertura differisce fino allo 0.9%** (2016-03-29, 2017-06-27, 2017-07-19,
+2017-08-29), e l'apertura è il campo con cui il motore riempie gli ordini:
+tenerne una a caso significa scegliere il prezzo di esecuzione fra due valori
+discordanti.
+
+`engine.data.load` avrebbe comunque rifiutato il file, perché le date duplicate
+sono un controllo bloccante — il difetto non poteva arrivare a un backtest. Ma la
+soluzione non è deduplicare a valle: `scripts/extract_av_result.py` ora collassa
+le date ripetute **solo** se le righe concordano entro lo 0.5%, e altrimenti si
+ferma dicendo quali date. Su EEM si ferma, come deve.
+
+**EEM è stato quindi sostituito da VWO**, stessa esposizione (azionario
+emergenti), fondo diverso: 3.445 barre, nessun duplicato, unica segnalazione il
+gap COVID del 2020-03-16 comune a tutto l'azionario. La sostituzione è avvenuta
+**prima** di eseguire qualunque backtest, ed è documentata in
+`data/universe_declaration.md`: la clausola di quella dichiarazione permette a uno
+strumento di uscire solo per un difetto dei dati, mai per il suo rendimento.
+
 **Regola che ne segue: una sola famiglia di fonti per backtest.** Mescolare
 futures FMP ed ETF Twelve Data in un portafoglio fabbrica lead-lag inesistenti e
 falsa qualsiasi timing di segnale cross-asset. Resta un disallineamento
@@ -71,8 +120,15 @@ date duplicate, barre copiate dalla precedente, OHLC incoerente
 (`low <= open,close <= high`), prezzi non positivi, interruzioni oltre il ponte
 festivo, e gap `|open − close precedente|` oltre il 10%.
 
-Esito attuale sull'universo di lavoro: le sei serie passano. Restano segnalati,
-e sono **eventi di mercato reali, non difetti**: 9 gap oltre il 10% su USO nel
+Esito attuale: le quindici serie passano. Sulle nove nuove il gate ha segnalato
+10 gap oltre il 10% su UNG (massimo 19%), 4 su SLV (massimo 15%) e 1 su EFA e VWO
+(il 2020-03-16), tutti verificati **eventi di mercato reali**: il rapporto massimo
+fra apertura e chiusura precedente è 1.19 su UNG e 1.11 su SLV, mentre un reverse
+split non aggiustato — UNG ne ha fatti diversi — comparirebbe come un salto di un
+fattore intero. Le serie sono aggiustate.
+
+Sulle sei originali restano segnalati, e sono anch'essi **eventi di mercato
+reali, non difetti**: 9 gap oltre il 10% su USO nel
 2020 (crollo del petrolio, massimo 22% il 2020-03-09), un gap del 12% su CORN
 nel 2010 (illiquidità dei primi mesi dell'ETF), un gap del 10% su SPY il
 2020-03-16.
@@ -112,7 +168,10 @@ REST/FMP REST richiedono chiave.
 - `scripts/extract_av_result.py <tool_result> <out.csv> [--ohlc|--close]` —
   normalizza i risultati MCP salvati su disco (Alpha Vantage e Twelve Data, il
   separatore è rilevato dall'header): ordine crescente, scarto delle barre
-  piatte a volume nullo e di quelle con OHLC incoerente.
+  piatte a volume nullo e di quelle con OHLC incoerente, e collasso delle date
+  ripetute **solo** se concordano entro lo 0.5% — sopra quella soglia si ferma,
+  perché scegliere fra due prezzi discordanti non è normalizzare. Coperto da
+  `tests/test_extractors.py`.
 - `scripts/extract_fmp_result.py <tool_result> <out.csv>` — stessa cosa per il
   JSON di FMP.
 - `scripts/fetch_binanceus.py` — resta per riferimento storico; la fonte è

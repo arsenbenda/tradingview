@@ -54,8 +54,8 @@ I sei attuali restano invariati. Nove nuovi, tutti ETF quotati negli Stati Uniti
 | Crypto | BTC | Bitcoin | 2013-04-28 | già presente |
 | Crypto | ETH | Ethereum | 2015-08-08 | già presente |
 | Azionario | SPY | USA large cap | 2006-10-26 | già presente |
-| Azionario | **EFA** | sviluppati ex-USA | da verificare | **nuovo** |
-| Azionario | **EEM** | emergenti | da verificare | **nuovo** |
+| Azionario | **EFA** | sviluppati ex-USA | 2001-08-27 | **nuovo** |
+| Azionario | **VWO** | emergenti | 2013-01-02 | **nuovo** (sostituisce EEM) |
 | Obbligazionario | **TLT** | duration USA 20+ anni | 2002-07-30 | **nuovo** |
 | Obbligazionario | **HYG** | credito high yield | 2007-04-11 | **nuovo** |
 | Valute | **UUP** | dollaro | 2007-03-01 | **nuovo** |
@@ -65,7 +65,7 @@ I sei attuali restano invariati. Nove nuovi, tutti ETF quotati negli Stati Uniti
 | Materie prime | USO | petrolio | 2006-10-26 | già presente |
 | Materie prime | **UNG** | gas naturale | 2007-04-18 | **nuovo** |
 | Materie prime | CORN | mais | 2010-06-09 | già presente |
-| Immobiliare | **VNQ** | REIT USA | da verificare | **nuovo** |
+| Immobiliare | **VNQ** | REIT USA | 2004-09-29 | **nuovo** |
 
 Quindici strumenti, cinque settori più l'immobiliare. Le prime barre sono quelle
 riportate da `get_earliest_timestamp` di Twelve Data.
@@ -84,6 +84,29 @@ riportate da `get_earliest_timestamp` di Twelve Data.
   correlati a SPY molto più di quanto lo siano l'Europa o gli emergenti.
 * **Nessun secondo ETF azionario USA**, nessun LQD, nessun IEF, nessun FXE: tutti
   fattori già coperti.
+
+## Modifiche alla lista, dopo la dichiarazione
+
+Registrate qui come impone la clausola: uno strumento esce solo per un difetto
+dei dati, mai per il suo rendimento, e l'uscita va documentata.
+
+### EEM → VWO, il 2026-09-15, prima di qualunque backtest
+
+Twelve Data restituisce EEM con ogni giorno di contrattazione dal 2013 al 2021
+ripetuto due volte, e su quattro date le due righe portano **aperture diverse fino
+allo 0.9%** — l'apertura è il prezzo con cui il motore riempie gli ordini, quindi
+tenerne una a caso significa scegliere il prezzo di esecuzione fra due valori
+discordanti. Il filtro per borsa non cambia nulla: sono due pagine sovrapposte
+della stessa richiesta, non due venue. Dettaglio completo in `data/README.md`,
+difetto numero 4.
+
+VWO ha la stessa esposizione dichiarata — azionario emergenti — ed è il secondo
+fondo per liquidità su quella esposizione, quindi il criterio resta soddisfatto.
+Passa il gate senza rilievi oltre al gap COVID del 2020-03-16, comune a tutto
+l'azionario.
+
+**Nessun backtest era stato eseguito quando la sostituzione è avvenuta**: non
+esisteva alcuna informazione sul rendimento né di EEM né di VWO.
 
 ## Cosa mi aspetto, dichiarato prima di eseguirlo
 

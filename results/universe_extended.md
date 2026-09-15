@@ -1,0 +1,145 @@
+# Universo allargato: da sei a quindici strumenti
+
+Eseguito il 2026-09-15 con `python3 scripts/run_benchmark.py --universe extended`.
+Stesso segnale, stessi parametri, stesso motore, stesso periodo
+(2015-08-10 → 2026-09-14): cambia solo su quante cose gira. Nessuna nuova
+ipotesi, **N resta 22**.
+
+La lista dei nove strumenti aggiunti è stata dichiarata in
+`data/universe_declaration.md` e committata **prima** di scaricare i dati, con le
+attese scritte in anticipo. Questo report le confronta con il risultato.
+
+## Il risultato
+
+| | MAR | Sharpe | CAGR | maxDD | Trade |
+|---|---|---|---|---|---|
+| **sei strumenti** | **0.87** | 1.39 | 7.7% | 8.9% | 303 |
+| **quindici strumenti** | **0.61** | 0.85 | 2.5% | 4.1% | 787 |
+
+Il drawdown **si è più che dimezzato**, da 8.9% a 4.1%. Il rendimento è sceso di
+due terzi, da 7.7% a 2.5%. Il MAR è **peggiorato**, da 0.87 a 0.61.
+
+Vale in tutti e tre gli scenari, quindi non è un effetto del modello di costo né
+del vincolo di direzione:
+
+| scenario | sei | quindici |
+|---|---|---|
+| long/short, costi stimati | 0.87 | **0.61** |
+| solo long, costi stimati | 0.89 | **0.74** |
+| long/short, costi doppi | 0.84 | **0.56** |
+
+## Attese registrate in anticipo, e cosa è successo
+
+| attesa dichiarata prima | esito |
+|---|---|
+| Il drawdown di portafoglio scende | **giusta** — 8.9% → 4.1% |
+| Il CAGR resta simile o scende leggermente | **sbagliata** — è sceso del 68% |
+| Il MAR sale, ma meno del calo del drawdown | **sbagliata** — è sceso, da 0.87 a 0.61 |
+| Il guadagno sarà minore di quello dei primi sei | giusta, ma per difetto: è negativo |
+
+Due attese su quattro sbagliate, ed è il motivo per cui registrarle serviva. La
+dichiarazione diceva anche cosa avrebbe dovuto far sospettare un errore — "se il
+CAGR sale e il drawdown non scende" — e quel caso non si è verificato: il
+drawdown è sceso come previsto. Il modello di cosa fa la diversificazione era
+giusto; era sbagliata l'ipotesi implicita che gli strumenti aggiunti avessero un
+vantaggio da diversificare.
+
+## Perché: il segnale non funziona su nulla che non sia crypto
+
+MAR per strumento, stesso periodo e stessi parametri:
+
+| strumento | MAR | CAGR | | strumento | MAR | CAGR |
+|---|---|---|---|---|---|---|
+| **ETH** | **0.68** | **26.4%** | | EQUITY_INTL (EFA) | −0.03 | −0.7% |
+| **BTC** | **0.65** | **13.6%** | | BOND_LONG (TLT) | −0.04 | −0.6% |
+| GOLD | 0.19 | 2.6% | | USD (UUP) | −0.05 | −0.6% |
+| CRUDE | 0.19 | 2.3% | | NATGAS (UNG) | −0.05 | −0.9% |
+| SILVER | 0.05 | 1.1% | | BOND_HY (HYG) | −0.08 | −1.9% |
+| EQUITY (SPY) | 0.02 | 0.3% | | JPY (FXY) | −0.08 | −1.7% |
+| CORN | −0.00 | −0.0% | | REIT (VNQ) | −0.08 | −2.0% |
+| | | | | EQUITY_EM (VWO) | −0.09 | −1.8% |
+
+**Due strumenti su quindici hanno un vantaggio. Sono le due crypto.** Tutto il
+resto sta fra −2.0% e +2.6% di CAGR, e nove dei quindici sono negativi.
+
+### Non sono i costi
+
+Rieseguito con commissioni e slippage azzerati, i nove nuovi restano negativi:
+EQUITY_INTL −0.6%, EQUITY_EM −1.6%, BOND_LONG −0.5%, BOND_HY −1.8%, USD +0.1%,
+JPY −1.3%, SILVER +1.1%, NATGAS −0.9%, REIT −1.9%. Il vantaggio non è mangiato
+dalle frizioni: non c'è.
+
+### Non è un errore di aggregazione
+
+Il difetto che diluiva i rendimenti degli strumenti quotati prima è stato
+corretto e testato prima di questo lavoro (`metrics.equal_weight_returns`). Sui
+sei originali, che condividono il periodo, il benchmark resta 0.87 / 1.39 / 7.7%
+/ 8.9% / 303 trade, identico a prima.
+
+## Cosa significa
+
+**Il portafoglio non fabbrica rendimento.** Riduce il rischio, e lo ha fatto
+esattamente come previsto. Ma con capitale equipesato, ogni strumento senza
+vantaggio aggiunto diluisce quelli che ce l'hanno: il contributo di BTC ed ETH
+passa da 2/6 a 2/15 del capitale, e il rendimento crolla in proporzione mentre il
+drawdown scende solo della radice di quanto sarebbe servito.
+
+**La leva non lo risolve, e va detto perché la tentazione è immediata.** Il MAR è
+invariante di scala: raddoppiare l'esposizione raddoppia CAGR *e* drawdown e
+lascia il rapporto dov'era. Un portafoglio con MAR 0.61 leverato resta un
+portafoglio con MAR 0.61. Il vol targeting citato fra le questioni aperte non può
+recuperare questi 0.26 di MAR — può solo spostare il punto di lavoro lungo la
+stessa retta.
+
+**Pesare di più gli strumenti che funzionano è selezione.** È l'unica cosa che
+alzerebbe il MAR, ed è esattamente ciò che il progetto ha passato ventidue
+ipotesi a non fare: quei pesi sarebbero scelti sapendo che il 2015-2026 è stato
+il decennio delle crypto.
+
+E soprattutto: **il benchmark di questo progetto è un risultato crypto.** Lo 0.87
+di MAR contro cui sono state misurate tutte e ventidue le ipotesi non è la
+performance di un trend follower multi-asset, è la performance di BTC ed ETH con
+quattro strumenti quasi neutri intorno. Allargare a quindici lo rende visibile: lo
+stesso identico segnale, su un universo davvero eterogeneo, fa 0.61 con Sharpe
+0.85.
+
+## Limiti dichiarati
+
+1. **Undici anni sono un periodo, non un campione di periodi.** Il 2015-2026 è
+   stato un decennio difficile per il trend following fuori dalle crypto — tassi a
+   zero fino al 2022, poi un solo grande movimento. Il trend following su
+   obbligazionario e valute ha decenni di storia in cui ha funzionato, e questo
+   test non li tocca. La conclusione è *su questo periodo*, e non si estende.
+2. **Un solo set di parametri, per scelta.** Donchian 55/20 con stop 2×ATR(20) è
+   tarato, implicitamente, su mercati a volatilità elevata. Su UUP, che si muove
+   dell'8% all'anno, un canale a 55 barre è probabilmente la finestra sbagliata.
+   Ma cercare la finestra giusta per strumento è ottimizzare per asset, cioè la
+   regola 3, e distruggerebbe la domanda a cui il progetto risponde.
+3. **Equipesatura del capitale.** È la scelta dichiarata e l'unica che non guarda
+   i risultati. Una pesatura per rischio a livello di portafoglio, o per
+   correlazione, è un'ipotesi diversa: andrebbe dichiarata prima, contata come
+   ipotesi, e sottoposta alla stessa validazione delle altre ventidue.
+4. **Nessun numero qui è out-of-sample.** Vale quanto scritto in
+   `results/validation.md`: questo è il periodo su cui tutto è stato costruito.
+
+## Conseguenze
+
+* La questione aperta "portafoglio invece che segnale" **si chiude, con esito
+  negativo**. L'effetto sul drawdown è reale e misurato; l'effetto sul MAR è
+  negativo. Non era "l'unica leva che i dati hanno mostrato funzionare": era
+  l'unica non ancora misurata.
+* L'universo a quindici resta nel repo e resta congelato, perché è il campione più
+  onesto di cui il progetto dispone. I sei restano il default di
+  `data.load_universe` solo per non rendere irriproducibili i risultati già
+  pubblicati.
+* Quello che resta da fare non cambia: il **parity test** contro il Pine, che non
+  richiede di trovare un vantaggio nuovo, e **più dati** — altri decenni, non
+  altre ipotesi sugli stessi undici anni.
+
+## Riproduzione
+
+```bash
+python3 -m pytest tests/ -q                            # 85 test
+python3 scripts/run_benchmark.py --universe core       # i sei, 0.87
+python3 scripts/run_benchmark.py --universe extended   # i quindici, 0.61
+```

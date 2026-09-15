@@ -63,21 +63,25 @@ def buy_and_hold(df: pd.DataFrame) -> metrics.Stats:
 
 def table(rows: list[tuple[str, metrics.Stats]], title: str) -> None:
     print(f"\n{title}")
-    print(f"{'asset':9s} {'trade':>6s} {'CAGR':>8s} {'maxDD':>8s} {'MAR':>6s} "
+    print(f"{'asset':12s} {'trade':>6s} {'CAGR':>8s} {'maxDD':>8s} {'MAR':>6s} "
           f"{'Sharpe':>7s} {'PF':>6s} {'win%':>6s} {'avgR':>6s} {'espos.':>7s}")
     for name, s in rows:
-        print(f"{name:9s} {s.trades:6d} {s.cagr:7.1%} {s.max_dd:7.1%} {s.mar:6.2f} "
+        print(f"{name:12s} {s.trades:6d} {s.cagr:7.1%} {s.max_dd:7.1%} {s.mar:6.2f} "
               f"{s.sharpe:7.2f} {s.profit_factor:6.2f} {s.win_rate:5.0%} {s.avg_r:6.2f} {s.exposure:6.0%}")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--universe", choices=("core", "extended"), default="core",
+                    help="core: i sei su cui sono stati prodotti i risultati pubblicati; "
+                         "extended: i quindici di data/universe_declaration.md")
     ap.add_argument("--start", default=data.DEFAULT_START,
                     help="limita tutte le serie da questa data (default: il periodo "
                          "comune dell'universo; usare --start 1900-01-01 per la storia piena)")
     args = ap.parse_args()
 
-    universe = data.load_universe()
+    nomi = data.CORE if args.universe == "core" else data.EXTENDED
+    universe = data.load_universe(nomi)
     if args.start:
         universe = {k: v[v.index >= args.start] for k, v in universe.items()}
     start, end = data.common_period(universe)
@@ -106,8 +110,10 @@ def main() -> int:
     table([(n, buy_and_hold(df)) for n, df in universe.items()], "BUY & HOLD (riferimento)")
 
     OUT.mkdir(exist_ok=True)
-    (OUT / "benchmark_donchian.json").write_text(json.dumps(summary, indent=2, default=float))
-    print(f"\nrisultati salvati in results/benchmark_donchian.json")
+    nome_file = ("benchmark_donchian.json" if args.universe == "core"
+                 else "benchmark_extended.json")
+    (OUT / nome_file).write_text(json.dumps(summary, indent=2, default=float))
+    print(f"\nrisultati salvati in results/{nome_file}")
     return 0
 
 

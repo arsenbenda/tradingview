@@ -13,15 +13,48 @@ import pandas as pd
 
 RAW = pathlib.Path(__file__).resolve().parent.parent / "data" / "raw"
 
-# nome logico -> file. Sei asset eterogenei, un solo set di parametri.
-UNIVERSE = {
+# nome logico -> file. Un solo set di parametri su tutti, sempre.
+FILES = {
+    # crypto — Alpha Vantage
     "BTC": "BTCUSD_1d.csv",
     "ETH": "ETHUSD_1d.csv",
-    "GOLD": "GLD_1d_td.csv",
-    "CRUDE": "USO_1d_td.csv",
-    "CORN": "CORN_1d_td.csv",
+    # azionario — Twelve Data
     "EQUITY": "SPY_1d_td.csv",
+    "EQUITY_INTL": "EFA_1d_td.csv",
+    "EQUITY_EM": "VWO_1d_td.csv",
+    # obbligazionario
+    "BOND_LONG": "TLT_1d_td.csv",
+    "BOND_HY": "HYG_1d_td.csv",
+    # valute
+    "USD": "UUP_1d_td.csv",
+    "JPY": "FXY_1d_td.csv",
+    # materie prime
+    "GOLD": "GLD_1d_td.csv",
+    "SILVER": "SLV_1d_td.csv",
+    "CRUDE": "USO_1d_td.csv",
+    "NATGAS": "UNG_1d_td.csv",
+    "CORN": "CORN_1d_td.csv",
+    # immobiliare
+    "REIT": "VNQ_1d_td.csv",
 }
+
+#: i sei asset su cui sono stati prodotti tutti i risultati fino al 2026-09-15.
+#:
+#: Resta il default di ``load_universe`` per una ragione sola: ogni numero in
+#: ``results/`` è stato calcolato su questi sei, e un default che cambia
+#: renderebbe irriproducibili report già scritti e già commessi. Chi vuole
+#: l'universo allargato lo chiede per nome.
+CORE = ("BTC", "ETH", "GOLD", "CRUDE", "CORN", "EQUITY")
+
+#: i quindici strumenti dichiarati in ``data/universe_declaration.md``.
+#:
+#: Cinque settori più l'immobiliare, con obbligazionario e valute che ai sei
+#: mancavano del tutto. La lista è congelata: uno strumento esce solo per un
+#: difetto dei dati, documentato. Non esce perché rende poco — quattro dei sei
+#: originali rendono quasi nulla da soli, e il portafoglio batte comunque il
+#: migliore di loro.
+EXTENDED = CORE + ("EQUITY_INTL", "EQUITY_EM", "BOND_LONG", "BOND_HY",
+                   "USD", "JPY", "SILVER", "NATGAS", "REIT")
 
 OHLCV = ["open", "high", "low", "close", "volume"]
 
@@ -46,7 +79,7 @@ def load(name_or_path: str) -> pd.DataFrame:
     Restituisce un DataFrame indicizzato per data, ordinato, con colonne float.
     Solleva ValueError se la serie ha difetti che falserebbero il backtest.
     """
-    path = RAW / UNIVERSE[name_or_path] if name_or_path in UNIVERSE else pathlib.Path(name_or_path)
+    path = RAW / FILES[name_or_path] if name_or_path in FILES else pathlib.Path(name_or_path)
     df = pd.read_csv(path)
     df["date"] = pd.to_datetime(df["date"])
     df = df.set_index("date").sort_index()
@@ -69,9 +102,9 @@ def load(name_or_path: str) -> pd.DataFrame:
     return df
 
 
-def load_universe(names: list[str] | None = None) -> dict[str, pd.DataFrame]:
-    """Carica l'universo di lavoro."""
-    return {n: load(n) for n in (names or list(UNIVERSE))}
+def load_universe(names: "list[str] | tuple[str, ...] | None" = None) -> dict[str, pd.DataFrame]:
+    """Carica un universo. Default: i sei di ``CORE``, per non spostare i risultati già pubblicati."""
+    return {n: load(n) for n in (names or CORE)}
 
 
 def common_period(series: dict[str, pd.DataFrame]) -> tuple[pd.Timestamp, pd.Timestamp]:
