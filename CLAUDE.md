@@ -8,7 +8,7 @@ perché TradingView non espone API per lo Strategy Tester.
 
 ```bash
 pip install pandas numpy pytest
-python3 -m pytest tests/ -q                      # 97 test, devono passare tutti
+python3 -m pytest tests/ -q                      # 98 test, devono passare tutti
 python3 scripts/run_benchmark.py                 # benchmark, i sei asset
 python3 scripts/run_benchmark.py --universe extended   # gli stessi parametri sui quindici
 python3 scripts/run_benchmark.py --universe no-crypto  # i tredici senza BTC ed ETH
@@ -30,11 +30,21 @@ rieseguire nulla.
 |---|---|---|---|---|---|
 | **Donchian 55/20** (benchmark, parametri Turtle mai ottimizzati) | **0.87** | 1.39 | 7.7% | 8.9% | 303 |
 | Confluence v3.2 (54 input) | 0.51 | 1.02 | 3.4% | 6.6% | 115 |
-| Sanyaku v5.5 (53 input) | 0.37 | 0.93 | 2.1% | 5.7% | 76 |
+| Sanyaku v5.5 (53 input) | 0.83 | **1.42** | 5.0% | 6.1% | 321 |
 
 Periodo 2015-08-10 → 2026-09-14, sei asset, un solo set di parametri, costi per
-asset. Nessuna delle due strategie Pine batte il benchmark, e perdono anche su
-BTC, l'asset su cui sono state sviluppate.
+asset. Sul MAR — la metrica primaria — nessuna delle due batte il benchmark, ma
+i due margini non si assomigliano: la v3.2 è battuta nettamente, la **v5.5 no**,
+e sullo Sharpe passa davanti (1.42 contro 1.39). Su BTC, l'asset su cui entrambe
+sono state sviluppate, la v3.2 perde in casa (0.27 contro 0.65) mentre la v5.5
+fa 0.73 ed è il suo asset migliore.
+
+**Questo non è un vantaggio dimostrato, ed è importante non leggerlo così.** La
+v5.5 è stata sviluppata su questi dati e non è mai passata dal DSR, dal
+walk-forward né dal k-fold purgato: per la regola 7 è un numero in-sample, non un
+risultato. Vale come *la sola cosa sul tavolo che meriti di essere validata*, non
+come qualcosa di validato. Il numero precedente (MAR 0.37) era un difetto di
+misura, non della strategia — vedi `results/comparison.md`.
 
 Nessuno dei 15 componenti Ichimoku/Gann testati come filtro migliora il
 benchmark. Sette varianti lo battono in-sample, ma **nessuna sopravvive alla
@@ -265,11 +275,20 @@ Non ripetere questi test senza una ragione nuova.
    Il costo della prova è registrato: la soglia del DSR è salita per tutte le
    ventidue ipotesi precedenti.
 
-4. **Parity test contro il Pine.** Mai eseguito, e ora l'unica verifica aperta
-   che non richieda di cercare un vantaggio nuovo. Richiede export CSV da
-   TradingView degli stessi simboli, perché il parity ha senso solo se i due lati
-   usano lo stesso feed — l'1.5% delle barre crypto differisce oltre il 2% fra
-   due fonti diverse.
+4. **Parity test contro il Pine.** *Eseguito parzialmente il 2026-09-15, e ha
+   già pagato.* Confronto della lista trade dello Strategy Tester su
+   BINANCE:BTCUSD 2020-2026 contro il motore: ha trovato il blocco della pausa
+   della v5.5, che nessun altro controllo aveva visto. Corretto quello, le date
+   di ingresso coincidenti passano da 5/23 a **12/23 esatte** e 15/23 entro due
+   giorni.
+
+   **Resta aperto il residuo**, ed è sostanziale: sulla stessa finestra il motore
+   apre 39 ingressi contro i 23 di TradingView. Otto ingressi di TradingView non
+   hanno corrispondenza entro due giorni. Non si può dire se sia il feed
+   (Alpha Vantage contro Binance) o un'altra divergenza di porting finché i due
+   lati non girano sulle stesse barre: serve l'export OHLCV, non solo la lista
+   trade. **Aprire più posizioni del Pine è la direzione pericolosa** — significa
+   che manca una condizione di blocco, non che ne abbiamo una in più.
 
 5. **Dati fuori campione veri.** Nessun test su questo campione può più
    distinguere un vantaggio di 0.28 di Sharpe annuo da zero: undici anni e sei
@@ -277,9 +296,37 @@ Non ripetere questi test senza una ragione nuova.
    domanda è allargare il campione — altri strumenti, o il tempo che passa — non
    un'altra statistica sugli stessi dati.
 
+6. **Validare la v5.5 come si è validato tutto il resto.** Nuova, e conseguenza
+   diretta della correzione. La v5.5 ora fa MAR 0.83 e Sharpe 1.42 contro 0.87 e
+   1.39 del benchmark, ma è un numero in-sample su una strategia sviluppata su
+   questi dati: non è mai passata dal DSR, dal walk-forward a candidato fisso, dal
+   k-fold purgato né dal bootstrap a blocchi. È l'unica cosa sul tavolo che
+   meriti quel trattamento, ed è anche l'unica strada per sapere se il progetto
+   abbia trovato qualcosa o solo riparato uno strumento.
+
+   Due avvertenze prima di farlo. Primo: **entra nel catalogo come ipotesi**, e
+   quindi alza la soglia del DSR per tutte le altre — la regola 4 non fa sconti,
+   e questa è esattamente la ventiquattresima ipotesi che l'esclusione qui sopra
+   sconsiglia di cercare. La differenza è che questa non è stata cercata: era già
+   nel repo, misurata male. Secondo: il confronto va fatto **a parità di
+   volatilità**, come per `sizing_notional`, perché la v5.5 gira a esposizione
+   57% contro 54% e drawdown 6.1% contro 8.9% — scale diverse, differenziale
+   grezzo non interpretabile.
+
 ## Deviazioni note del porting
 
 Dichiarate in `results/comparison.md`, nessuna favorisce il benchmark:
 timeframe inferiore assente per la v3.2 (dati solo daily), regime HTF calcolato
 sull'ultimo blocco chiuso invece che su quello in formazione (più conservativo),
 `syminfo.mintick` sostituito da una soglia relativa.
+
+Una quarta deviazione è stata **trovata e corretta** il 2026-09-15, e questa
+favoriva il benchmark: la pausa da perdite consecutive della v5.5 non scadeva
+mai, perché il porting valutava la soglia a ogni barra invece che alla chiusura
+di un trade e non azzerava il contatore come fa il Pine
+(`ichimoku_sanyaku_v55.pine`, righe 133-137). La v5.5 risultava ferma dal 67% al
+94% delle barre. È emersa dal parity test, non dalla suite: nessun test
+verificava che una strategia restasse viva fino a fine serie. Adesso c'è
+(`tests/test_strategies.py::test_la_pausa_dopo_le_perdite_non_e_definitiva`).
+**Morale operativa: una strategia che opera poco va trattata come sospetta
+finché non si è verificato che il silenzio sia una scelta e non un blocco.**
