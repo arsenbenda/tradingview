@@ -103,6 +103,59 @@ quattro strumenti quasi neutri intorno. Allargare a quindici lo rende visibile: 
 stesso identico segnale, su un universo davvero eterogeneo, fa 0.61 con Sharpe
 0.85.
 
+## Controprova: i tredici senza crypto, solo long
+
+Eseguito il 2026-09-15 con `python3 scripts/run_benchmark.py --universe no-crypto`,
+stesso periodo e stessi parametri. Non è una nuova ipotesi e **N resta 22**: è
+`EXTENDED` meno una classe di attività intera, cioè la misura diretta
+dell'affermazione della sezione precedente. Solo long perché è il vincolo che i
+tredici chiedono da soli — sono strumenti a deriva positiva di lungo periodo, e
+lo short lì è la metà del segnale che perde.
+
+| quindici / tredici | MAR | Sharpe | CAGR | maxDD | Trade |
+|---|---|---|---|---|---|
+| quindici, long/short | 0.61 | 0.85 | 2.5% | 4.1% | 787 |
+| quindici, solo long | 0.74 | 1.16 | 2.9% | 3.9% | 417 |
+| **tredici senza crypto, long/short** | **−0.03** | −0.08 | −0.2% | 5.5% | 678 |
+| **tredici senza crypto, solo long** | **0.17** | 0.30 | **0.4%** | 2.4% | 351 |
+
+**Togliere due strumenti su quindici porta via tutto il rendimento.** I tredici
+che restano, che sono l'86% del capitale, fanno 0.4% l'anno solo long e perdono
+long/short. Il vincolo long-only vale 0.20 di MAR su questo universo — molto più
+dei 0.13 che vale sui quindici — perché senza crypto la parte short non ha più
+niente da compensare: su nove strumenti su tredici aggiungere lo short peggiora
+il CAGR, e su tre lo migliora di meno di 0.2 punti.
+
+### Non sono i costi, di nuovo
+
+Solo long, tredici strumenti, a frizioni azzerate: MAR 0.21, CAGR 0.52%, sette
+strumenti positivi su tredici invece di sei. Con i costi stimati 0.17, con i costi
+doppi 0.13. La pendenza c'è ma parte da zero: non è un vantaggio eroso dalle
+frizioni, è un vantaggio che non esiste e che le frizioni rendono appena
+negativo.
+
+### Non è il periodo
+
+Senza ETH cade il vincolo sulla data d'inizio — era lo strumento con meno storia —
+e i tredici quotano tutti dal **2013-01-02**. Rieseguito su quei tre anni e mezzo
+in più, cioè su un campione più grande del 24%, il risultato peggiora: solo long
+MAR 0.10 e CAGR 0.2%, long/short MAR −0.02. I due anni e mezzo aggiuntivi non
+contengono un vantaggio che il 2015-2026 nascondeva.
+
+### Cosa aggiunge alla conclusione
+
+La sezione precedente diceva che il benchmark è un risultato crypto sulla base
+dei MAR per strumento. Questa lo misura a livello di portafoglio, che è il
+livello a cui il progetto decide: **il trend following Donchian 55/20 su undici
+anni di obbligazionario, valute, azionario sviluppato ed emergente, immobiliare e
+materie prime non produce nulla di distinguibile da zero.** Lo 0.87 dei sei non è
+lo 0.87 di un trend follower multi-asset diluito da strumenti mediocri: è lo 0.87
+di due strumenti, e gli altri tredici sono zavorra a rendimento nullo.
+
+Questo non falsifica il trend following — vedi il primo dei limiti qui sotto, il
+periodo è uno solo e storicamente ostile fuori dalle crypto. Falsifica l'idea che
+questo progetto abbia mai misurato un trend follower multi-asset.
+
 ## Limiti dichiarati
 
 1. **Undici anni sono un periodo, non un campione di periodi.** Il 2015-2026 è
@@ -142,4 +195,6 @@ stesso identico segnale, su un universo davvero eterogeneo, fa 0.61 con Sharpe
 python3 -m pytest tests/ -q                            # 85 test
 python3 scripts/run_benchmark.py --universe core       # i sei, 0.87
 python3 scripts/run_benchmark.py --universe extended   # i quindici, 0.61
+python3 scripts/run_benchmark.py --universe no-crypto  # i tredici, 0.17 solo long
+python3 scripts/run_benchmark.py --universe no-crypto --start 2013-01-02   # 0.10
 ```

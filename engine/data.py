@@ -56,6 +56,15 @@ CORE = ("BTC", "ETH", "GOLD", "CRUDE", "CORN", "EQUITY")
 EXTENDED = CORE + ("EQUITY_INTL", "EQUITY_EM", "BOND_LONG", "BOND_HY",
                    "USD", "JPY", "SILVER", "NATGAS", "REIT")
 
+#: i quindici senza BTC ed ETH.
+#:
+#: Non è una lista scelta per il rendimento — è ``EXTENDED`` meno una classe di
+#: attività intera, per rispondere a una domanda sola: quanto del benchmark
+#: resta quando si toglie ciò che lo ha prodotto. Toglie anche il vincolo sulla
+#: data d'inizio, perché ETH è lo strumento con meno storia: questi tredici
+#: quotano tutti dal 2013-01-02.
+NO_CRYPTO = tuple(n for n in EXTENDED if n not in ("BTC", "ETH"))
+
 OHLCV = ["open", "high", "low", "close", "volume"]
 
 #: inizio del periodo di lavoro, comune a tutto l'universo.

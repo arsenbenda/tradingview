@@ -11,6 +11,7 @@ pip install pandas numpy pytest
 python3 -m pytest tests/ -q                      # 85 test, devono passare tutti
 python3 scripts/run_benchmark.py                 # benchmark, i sei asset
 python3 scripts/run_benchmark.py --universe extended   # gli stessi parametri sui quindici
+python3 scripts/run_benchmark.py --universe no-crypto  # i tredici senza BTC ed ETH
 python3 scripts/compare_strategies.py            # v3.2 e v5.5 contro il benchmark
 python3 scripts/run_ablation.py                  # quali componenti aggiungono valore
 python3 scripts/run_ichimoku_tests.py            # Ichimoku come segnale e come uscita
@@ -43,7 +44,10 @@ Dopo ventidue ipotesi, il benchmark è ancora la cosa più difficile da battere.
 E il benchmark stesso, allargato a quindici strumenti, è **un risultato crypto**
 (`results/universe_extended.md`): stesso segnale e stessi parametri su un universo
 davvero eterogeneo fanno **MAR 0.61** contro 0.87, perché solo BTC ed ETH hanno un
-vantaggio e nove strumenti su quindici sono negativi anche a costi zero.
+vantaggio e nove strumenti su quindici sono negativi anche a costi zero. Tolte le
+due crypto, i tredici che restano fanno **MAR 0.17 e CAGR 0.4%** solo long, e
+perdono long/short: il rendimento del progetto sta tutto in due strumenti su
+quindici.
 
 ## Regole di lavoro che hanno prodotto questi risultati
 
@@ -80,7 +84,8 @@ engine/
   backtest.py     motore bar-by-bar: segnale su t, fill su t+1, uscite parziali
   metrics.py      MAR, Sharpe, Sortino, PF, aggregazione di portafoglio
   costs.py        costi per asset, in percentuale (non in tick)
-  data.py         caricamento con controlli bloccanti; CORE (6) ed EXTENDED (15)
+  data.py         caricamento con controlli bloccanti; CORE (6), EXTENDED (15),
+                  NO_CRYPTO (13)
   filters.py      componenti da innestare sul benchmark (catalogo per l'ablazione)
   hypotheses.py   il catalogo di tutte le ipotesi provate; N_HYPOTHESES entra nel DSR
   validation.py   walk-forward, k-fold purgato con embargo, Deflated Sharpe, bootstrap
@@ -151,6 +156,9 @@ Non ripetere questi test senza una ragione nuova.
   non fabbrica rendimento, e con capitale equipesato ogni strumento senza
   vantaggio diluisce quelli che ce l'hanno. La leva non recupera niente, perché il
   MAR è invariante di scala. Vale in tutti e tre gli scenari di costo e direzione.
+  Controprova diretta: i tredici senza crypto fanno MAR 0.17 solo long (0.21 a
+  costi zero) e −0.03 long/short, e allungando il campione al 2013 — possibile
+  solo senza ETH — scendono a 0.10. Non è il periodo e non sono i costi.
 * **Cercare la ventitreesima ipotesi su questi dati.** Ogni ipotesi in più alza
   la soglia del DSR per tutte le precedenti: da N = 22 a N = 40 la soglia passa
   da 0.85 a 0.96 di Sharpe annuo. Continuare a cercare su questo campione rende
@@ -195,6 +203,15 @@ Non ripetere questi test senza una ragione nuova.
    contro cui sono state misurate tutte e ventidue le ipotesi non è la performance
    di un trend follower multi-asset: è BTC ed ETH con quattro strumenti quasi
    neutri intorno.
+
+   La controprova, `--universe no-crypto`, lo misura a livello di portafoglio: i
+   tredici non-crypto, l'86% del capitale, fanno **MAR 0.17 / CAGR 0.4% solo
+   long** e **MAR −0.03 long/short**. Il vincolo long-only vale 0.20 di MAR qui
+   contro 0.13 sui quindici, perché senza crypto lo short non ha più niente da
+   compensare. A costi zero 0.21, e sul campione più lungo (2013, possibile solo
+   togliendo ETH) 0.10: né le frizioni né il periodo. **Undici anni di
+   obbligazionario, valute, azionario globale, immobiliare e materie prime non
+   producono con Donchian 55/20 nulla di distinguibile da zero.**
 
 3. **Parity test contro il Pine.** Mai eseguito, e ora l'unica verifica aperta
    che non richieda di cercare un vantaggio nuovo. Richiede export CSV da

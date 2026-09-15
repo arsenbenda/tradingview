@@ -9,7 +9,9 @@ l'allargamento dell'universo da sei a quindici strumenti
 Due liste, entrambe in `engine/data.py`. **`CORE`**, i sei su cui sono stati
 prodotti tutti i risultati fino al 2026-09-15, resta il default di
 `load_universe` perché cambiarlo renderebbe irriproducibili report già commessi.
-**`EXTENDED`**, i quindici, si chiede per nome.
+**`EXTENDED`**, i quindici, si chiede per nome, e così **`NO_CRYPTO`**, i quindici
+meno BTC ed ETH: tredici strumenti che quotano tutti dal 2013-01-02, quindi senza
+il vincolo sulla data d'inizio che ETH impone a tutti gli altri.
 
 | Asset | File | Fonte | Barre | Da |
 |---|---|---|---|---|

@@ -72,15 +72,17 @@ def table(rows: list[tuple[str, metrics.Stats]], title: str) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--universe", choices=("core", "extended"), default="core",
+    ap.add_argument("--universe", choices=("core", "extended", "no-crypto"), default="core",
                     help="core: i sei su cui sono stati prodotti i risultati pubblicati; "
-                         "extended: i quindici di data/universe_declaration.md")
+                         "extended: i quindici di data/universe_declaration.md; "
+                         "no-crypto: i quindici senza BTC ed ETH")
     ap.add_argument("--start", default=data.DEFAULT_START,
                     help="limita tutte le serie da questa data (default: il periodo "
                          "comune dell'universo; usare --start 1900-01-01 per la storia piena)")
     args = ap.parse_args()
 
-    nomi = data.CORE if args.universe == "core" else data.EXTENDED
+    nomi = {"core": data.CORE, "extended": data.EXTENDED,
+            "no-crypto": data.NO_CRYPTO}[args.universe]
     universe = data.load_universe(nomi)
     if args.start:
         universe = {k: v[v.index >= args.start] for k, v in universe.items()}
@@ -110,8 +112,13 @@ def main() -> int:
     table([(n, buy_and_hold(df)) for n, df in universe.items()], "BUY & HOLD (riferimento)")
 
     OUT.mkdir(exist_ok=True)
-    nome_file = ("benchmark_donchian.json" if args.universe == "core"
-                 else "benchmark_extended.json")
+    nome_file = {"core": "benchmark_donchian.json",
+                 "extended": "benchmark_extended.json",
+                 "no-crypto": "benchmark_no_crypto.json"}[args.universe]
+    # un periodo diverso dal default non è lo stesso risultato: se finisse nello
+    # stesso file, il prossimo che lo legge crederebbe di leggere il periodo comune
+    if args.start != data.DEFAULT_START:
+        nome_file = nome_file.replace(".json", f"_da{args.start}.json")
     (OUT / nome_file).write_text(json.dumps(summary, indent=2, default=float))
     print(f"\nrisultati salvati in results/{nome_file}")
     return 0
