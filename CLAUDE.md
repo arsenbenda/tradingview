@@ -8,7 +8,7 @@ perché TradingView non espone API per lo Strategy Tester.
 
 ```bash
 pip install pandas numpy pytest
-python3 -m pytest tests/ -q                      # 92 test, devono passare tutti
+python3 -m pytest tests/ -q                      # 97 test, devono passare tutti
 python3 scripts/run_benchmark.py                 # benchmark, i sei asset
 python3 scripts/run_benchmark.py --universe extended   # gli stessi parametri sui quindici
 python3 scripts/run_benchmark.py --universe no-crypto  # i tredici senza BTC ed ETH
@@ -37,11 +37,11 @@ asset. Nessuna delle due strategie Pine batte il benchmark, e perdono anche su
 BTC, l'asset su cui sono state sviluppate.
 
 Nessuno dei 15 componenti Ichimoku/Gann testati come filtro migliora il
-benchmark. Sette varianti su ventidue lo battono in-sample, ma **nessuna
-sopravvive alla validazione fuori campione** (`results/validation.md`): il
-miglior candidato ha un Deflated Sharpe di 0.025 sul differenziale contro il
-benchmark, e la procedura che lo seleziona vale −0.04 di MAR fuori campione.
-Dopo ventidue ipotesi, il benchmark è ancora la cosa più difficile da battere.
+benchmark. Sette varianti lo battono in-sample, ma **nessuna sopravvive alla
+validazione fuori campione** (`results/validation.md`): il miglior candidato ha un
+Deflated Sharpe di **0.074** sul differenziale a parità di volatilità contro il
+benchmark, e la procedura che lo seleziona vale −0.10 di MAR fuori campione.
+Dopo **ventitré** ipotesi, il benchmark è ancora la cosa più difficile da battere.
 
 E il benchmark stesso, allargato a quindici strumenti, è **un risultato crypto**
 (`results/universe_extended.md`): stesso segnale e stessi parametri su un universo
@@ -75,8 +75,13 @@ Sono il motivo per cui i numeri sopra sono affidabili. Vanno mantenute.
 4. **Ogni ipotesi testata va contata.** Il conteggio non sta più a mano: è la
    lunghezza di `engine/hypotheses.CATALOGUE`, e da lì entra nel Deflated Sharpe.
    Aggiungere un'ipotesi significa aggiungere una riga a quel catalogo, e la
-   soglia si alza da sola. Con ventidue ipotesi il migliore per caso migliora
+   soglia si alza da sola. Con ventitré ipotesi il migliore per caso migliora
    comunque qualcosa — di quanto, lo dice `run_validation.py`.
+   La ventitreesima è costata cara alle precedenti, ed è istruttivo: non è solo N
+   a salire, è la **dispersione** dei tentativi. Vale anche il contrario — un
+   confronto **a parità di volatilità** restringe quella dispersione, e va fatto
+   sempre, perché una variante che gira a tre volte la scala del benchmark ha un
+   differenziale positivo per costruzione (`validation.volatility_matched`).
 5. **Un filtro che aiuta un solo asset è un filtro adattato a quell'asset.** Si
    riporta sempre su quanti asset su sei migliora.
 6. **Niente ri-ottimizzazione periodica dei parametri.** È la pratica che
@@ -158,9 +163,20 @@ Non ripetere questi test senza una ragione nuova.
   cardine di entrambe le strategie Pine.
 * **`cloud_exit` come risultato del progetto**: in-sample batte il benchmark
   (MAR 1.15 contro 0.87) ed è stabile in 7 finestre su 8 e 5 fold su 5, ma il
-  vantaggio non è distinguibile dal miglior rumore di ventidue tentativi — DSR
-  0.025, PSR 0.829, IC 95% sul delta di MAR [−0.31, +0.82]. Va descritto come
+  vantaggio non è distinguibile dal miglior rumore di ventitré tentativi — DSR
+  **0.074** a parità di volatilità (era 0.025 a N = 22 senza correzione di scala),
+  PSR 0.952, IC 95% sul delta di MAR [−0.31, +0.82]. Va descritto come
   *non falsificato*, mai come confermato.
+* **`sizing_notional`, la ventitreesima ipotesi**: **falsificata.** Posizione pari
+  a tutto il capitale invece che a rischio/distanza dello stop. Sembrava viva a
+  quattro livelli di misura diversi e non lo era a nessuno: MAR 1.27 in-sample
+  (ma con maxDD 23% contro 8.9%, non confrontabile), differenziale grezzo il più
+  alto del progetto con DSR 0.784 (ma gira a **3.35× la volatilità** del
+  benchmark). A parità di volatilità il vantaggio passa da +1.43 a **+0.20** di
+  Sharpe annuo — l'86% era scala — con **DSR 0.011**, PSR 0.750 e 2 asset su 6.
+  Lo Sharpe che sale da 1.18 a 1.41 alzando `risk_pct` resta un fatto vero; non
+  sopravvive al confronto a parità di rischio. Vedi `results/validation.md`,
+  sezione «Rifacimento con N = 23».
 * **Il portafoglio come leva di rendimento.** Allargare da sei a quindici
   strumenti dimezza il drawdown (8.9% → 4.1%) ma taglia il CAGR di due terzi
   (7.7% → 2.5%): il MAR **scende** a 0.61. La diversificazione riduce il rischio,
@@ -182,10 +198,12 @@ Non ripetere questi test senza una ragione nuova.
   gratis. Quello che migliora davvero lo Sharpe (1.18 → 1.41) alzando `risk_pct`
   è un'altra cosa: il tetto sul capitale che sostituisce il sizing ATR con uno a
   nozionale costante. Vedi la questione aperta 5.
-* **Cercare la ventitreesima ipotesi su questi dati.** Ogni ipotesi in più alza
-  la soglia del DSR per tutte le precedenti: da N = 22 a N = 40 la soglia passa
-  da 0.85 a 0.96 di Sharpe annuo. Continuare a cercare su questo campione rende
-  più difficile, non più facile, dimostrare qualcosa.
+* **Cercare la ventiquattresima ipotesi su questi dati.** Ogni ipotesi in più
+  alza la soglia del DSR per tutte le precedenti, e la ventitreesima l'ha
+  dimostrato sul campo: la soglia del differenziale grezzo è passata da 0.85 a
+  **1.19** di Sharpe annuo, e il DSR di `cloud_exit` da 0.025 a 0.001, per il solo
+  fatto di aver provato una cosa in più. Continuare a cercare su questo campione
+  rende più difficile, non più facile, dimostrare qualcosa.
 
 ## Questioni aperte
 
@@ -196,10 +214,10 @@ Non ripetere questi test senza una ragione nuova.
 
    | | risultato |
    |---|---|
-   | DSR del differenziale `cloud_exit` − benchmark, N = 22 | **0.025** |
-   | PSR dello stesso differenziale, senza penalità per N | 0.829 |
-   | delta MAR della procedura di selezione, fuori campione | **−0.04** |
-   | ρ di rango fra classifica in-sample e out-of-sample | 0.14 |
+   | DSR del differenziale `cloud_exit` − benchmark, N = 23, a parità di volatilità | **0.074** |
+   | PSR dello stesso differenziale, senza penalità per N | 0.952 |
+   | delta MAR della procedura di selezione, fuori campione | **−0.10** |
+   | ρ di rango fra classifica in-sample e out-of-sample, mediana | +0.02 |
    | IC 95% sul delta di MAR, bootstrap a blocchi | **[−0.31, +0.82]** |
 
    Il candidato *fisso* è stabile ovunque lo si misuri; la *procedura* che lo ha
@@ -236,18 +254,16 @@ Non ripetere questi test senza una ragione nuova.
    obbligazionario, valute, azionario globale, immobiliare e materie prime non
    producono con Donchian 55/20 nulla di distinguibile da zero.**
 
-3. **Sizing a nozionale costante contro sizing proporzionale all'ATR.**
-   **Aperta, e non cercata**: è caduta fuori dalla validazione del rischio per
-   trade (`results/risk_walkforward.md`). Fuori campione l'ottimo del rischio è il
-   4% su tutte e quattro le configurazioni provate, con lo Sharpe che sale da 1.21
-   a 1.37 sui sei — ma la *procedura* che sceglie il rischio anno per anno non
-   funziona (mediana del delta −0.01, ρ di rango IS/OOS −0.04, 4 finestre su 8), e
-   soprattutto **ciò che migliora non è la leva**: è che sopra il 2% il tetto sul
-   capitale spegne il sizing ATR. L'ipotesi vera è quindi sul *sizing*, vale +0.21
-   di Sharpe, e per essere un risultato va riformulata come regola esplicita e
-   passata dal DSR con **N = 23**. Non è stata aggiunta a
-   `engine.hypotheses.CATALOGUE`: **N resta 22** e nessun numero pubblicato cambia.
-   Alzare N è una decisione, non un effetto collaterale.
+3. ~~Sizing a nozionale costante contro sizing proporzionale all'ATR~~:
+   **chiusa, falsificata.** Aggiunta al catalogo come `sizing_notional`, ventitreesima
+   ipotesi, e passata dal DSR con N = 23 (`results/validation.md`, sezione
+   «Rifacimento con N = 23»). A parità di volatilità il vantaggio è +0.20 di
+   Sharpe annuo con DSR 0.011: l'86% di quello che sembrava vantaggio era scala.
+   Rimane vero, e va tenuto a mente, che **alzare `risk_pct` sopra il 2% non alza
+   il rischio ma cambia regola di sizing** — il tetto sul capitale morde su 142
+   trade su 178 — e che il rischio per trade resta all'1% in tutti i runner.
+   Il costo della prova è registrato: la soglia del DSR è salita per tutte le
+   ventidue ipotesi precedenti.
 
 4. **Parity test contro il Pine.** Mai eseguito, e ora l'unica verifica aperta
    che non richieda di cercare un vantaggio nuovo. Richiede export CSV da

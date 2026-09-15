@@ -201,12 +201,19 @@ def run_strategy(
     initial_capital: float = 100_000.0,
     max_notional_pct: float = 1.0,
     size_at_signal: bool = False,
+    notional_sizing: bool = False,
 ) -> Result:
     """Esegue una strategia a posizione singola.
 
     ``size_at_signal=True`` riproduce il comportamento Pine: quantità e stop
     ancorati al close della barra di segnale invece che al prezzo di fill.
     Serve a misurare il costo di quel difetto, non a usarlo.
+
+    ``notional_sizing=True`` sostituisce la regola di dimensionamento: la
+    posizione vale ``max_notional_pct`` del capitale disponibile invece di
+    ``rischio / distanza dello stop``. Lo stop continua a governare le uscite,
+    ma non la quantità — quindi la volatilità dello strumento non entra più nel
+    sizing. È l'ipotesi 23 del catalogo, e ``risk_pct`` diventa inerte.
     """
     strategy.prepare(df)
 
@@ -262,8 +269,14 @@ def run_strategy(
             if dist > 0 and np.isfinite(dist):
                 fill = open_[i] * (1 + costs.per_side) if intent.direction > 0 else open_[i] * (1 - costs.per_side)
                 anchor = signal_close if size_at_signal else fill
-                risk_amount = st.cash * risk_pct * intent.risk_mult
-                size = min(risk_amount / dist, st.cash * max_notional_pct / fill)
+                if notional_sizing:
+                    size = st.cash * max_notional_pct / fill
+                    # il rischio non è più un input ma una conseguenza: tenerlo
+                    # nominale renderebbe incomparabili gli R fra le due regole
+                    risk_amount = size * dist
+                else:
+                    risk_amount = st.cash * risk_pct * intent.risk_mult
+                    size = min(risk_amount / dist, st.cash * max_notional_pct / fill)
                 if size > 0:
                     st.direction, st.entry_price, st.entry_index = intent.direction, fill, i
                     st.entry_tag = intent.tag
@@ -322,10 +335,11 @@ def run(
     trail_stop: pd.Series | None = None,
     tags: pd.Series | None = None,
     size_at_signal: bool = False,
+    notional_sizing: bool = False,
 ) -> Result:
     """Esegue una strategia espressa come serie di segnali."""
     strategy = _SignalStrategy(entry_long, exit_long, entry_short, exit_short,
                                stop_distance, trail_stop, tags, df.index)
     return run_strategy(df, strategy, costs=costs, risk_pct=risk_pct,
                         initial_capital=initial_capital, max_notional_pct=max_notional_pct,
-                        size_at_signal=size_at_signal)
+                        size_at_signal=size_at_signal, notional_sizing=notional_sizing)

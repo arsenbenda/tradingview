@@ -267,6 +267,7 @@ def main() -> int:
     print("  cosa banale che doveva battere.")
 
     print("\n4b) sul differenziale candidato − benchmark — il test che discrimina")
+    print("    ATTENZIONE: grezzo, cioè non corretto per la scala. Vedi 4c.")
     diff = {n: V.differential_returns(r.returns, is_base.returns) for n, r in prove.items()}
     sharpe_diff = {n: V.sharpe_per_bar(d) for n, d in diff.items()}
     validi_diff = [x for x in sharpe_diff.values() if np.isfinite(x)]
@@ -281,6 +282,28 @@ def main() -> int:
         print(f"{etichetta + ' − base':24s} {ds.sr_annual:8.2f} {ds.sr0_annual:9.2f} "
               f"{ds.psr:7.3f} {ds.dsr:7.3f}  {verdetto(ds.dsr)}")
         dsr_out[f"{etichetta} - base"] = ds.as_dict()
+
+    # ------------------------------------------------------------------ 4c
+    print("\n4c) sul differenziale a parità di volatilità — il test che discrimina davvero")
+    print("    Una variante che gira a tre volte la volatilità del benchmark ha un")
+    print("    differenziale grezzo positivo per costruzione. Qui ogni serie è prima")
+    print("    riscalata alla volatilità del benchmark, così il differenziale misura il")
+    print("    vantaggio e non la scala. Chi gira già alla stessa scala non si muove.")
+    vm = {n: V.differential_returns(V.volatility_matched(r.returns, is_base.returns),
+                                    is_base.returns)
+          for n, r in prove.items()}
+    sharpe_vm = {n: V.sharpe_per_bar(d) for n, d in vm.items()}
+    validi_vm = [x for x in sharpe_vm.values() if np.isfinite(x)]
+    migliore_vm = max(sharpe_vm, key=lambda n: sharpe_vm[n] if np.isfinite(sharpe_vm[n]) else -9)
+    print(f"\nil differenziale a parità di volatilità più alto delle "
+          f"{H.N_HYPOTHESES} ipotesi è {migliore_vm}")
+    print(f"\n{'':26s} {'vol/base':>9s} {'SR/anno':>8s} {'soglia N':>9s} {'PSR':>7s} {'DSR':>7s}  interpretazione")
+    for etichetta in dict.fromkeys([H.CANDIDATE, migliore_vm, migliore, "sizing_notional"]):
+        ds = V.deflated_sharpe(vm[etichetta], validi_vm, n_trials=H.N_HYPOTHESES)
+        rapporto = prove[etichetta].returns.std() / is_base.returns.std()
+        print(f"{etichetta + ' − base':26s} {rapporto:9.2f} {ds.sr_annual:8.2f} "
+              f"{ds.sr0_annual:9.2f} {ds.psr:7.3f} {ds.dsr:7.3f}  {verdetto(ds.dsr)}")
+        dsr_out[f"{etichetta} - base (vol matched)"] = ds.as_dict() | {"vol_ratio": float(rapporto)}
 
     print("\n  PSR = P(Sharpe vero > 0), ignora quante cose sono state provate.")
     print("  DSR = P(Sharpe vero > soglia), dove la soglia è lo Sharpe atteso dal migliore")

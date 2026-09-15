@@ -133,6 +133,14 @@ commutazione è completa.
 
 ## Cosa farne
 
+> **Aggiornamento, stesso giorno: fatto.** L'ipotesi è stata aggiunta al catalogo
+> come `sizing_notional`, N è passato a 23 e il DSR è stato rifatto. Esito:
+> **falsificata** — a parità di volatilità il vantaggio è +0.20 di Sharpe annuo
+> con DSR 0.011, contro il +1.43 e DSR 0.784 del differenziale grezzo. L'86% era
+> scala. Vedi `results/validation.md`, sezione «Rifacimento con N = 23». Quanto
+> segue è il ragionamento con cui la decisione è stata posta, e resta valido come
+> procedura.
+
 È un'**ipotesi nuova, la ventitreesima**, e non è stata cercata: è caduta fuori da
 una misura richiesta. Il che non la rende esente dalle regole.
 

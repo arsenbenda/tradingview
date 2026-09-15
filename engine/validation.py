@@ -450,6 +450,29 @@ def differential_returns(strategy: pd.Series, benchmark: pd.Series) -> pd.Series
     return frame["s"] - frame["b"]
 
 
+def volatility_matched(strategy: pd.Series, benchmark: pd.Series) -> pd.Series:
+    """``strategy`` riscalata alla volatilità di ``benchmark``.
+
+    Serve prima di differenziare due strategie che non lavorano alla stessa
+    scala. Il differenziale grezzo di una strategia che gira a tre volte la
+    volatilità del benchmark ha una media positiva **per costruzione**, e uno
+    Sharpe differenziale che misura la scala invece del vantaggio: è la stessa
+    trappola del MAR che lusinga la leva, spostata di una formula.
+
+    Il fattore è costante e stimato su tutto il periodo, quindi **non** è una
+    serie realizzabile in tempo reale: è una normalizzazione dichiarata, per
+    rendere confrontabile un differenziale, non una strategia.
+
+    Per le varianti che girano allo stesso ``risk_pct`` del benchmark il fattore
+    è vicino a 1 e non cambia nulla — che è il motivo per cui si può applicare a
+    tutte senza trattarne una in modo speciale.
+    """
+    sd_s, sd_b = strategy.std(), benchmark.std()
+    if not np.isfinite(sd_s) or sd_s <= 0 or not np.isfinite(sd_b):
+        return strategy
+    return strategy * (sd_b / sd_s)
+
+
 def rank_correlation(a: dict[str, float], b: dict[str, float]) -> float:
     """Correlazione di rango di Spearman fra due classifiche sugli stessi nomi.
 

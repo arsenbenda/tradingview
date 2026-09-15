@@ -1,9 +1,18 @@
 # Validazione fuori campione del candidato `cloud_exit`
 
 Eseguito il 2026-09-15 con `scripts/run_validation.py`. Periodo 2015-08-10 →
-2026-09-14, sei asset, un solo set di parametri, costi per asset. Nessuna nuova
-ipotesi di strategia è stata provata in questa sessione: il conteggio resta
-**22**.
+2026-09-14, sei asset, un solo set di parametri, costi per asset.
+
+> **Aggiornamento dello stesso giorno, N = 22 → 23.** Dopo questa stesura è stata
+> aggiunta al catalogo la ventitreesima ipotesi, `sizing_notional`
+> (`results/risk_walkforward.md`), ed è stato aggiunto un test che mancava: il
+> differenziale **a parità di volatilità**, perché una variante che gira a tre
+> volte la scala del benchmark ha un differenziale grezzo positivo per
+> costruzione. Il verdetto di questo documento **non cambia** — anzi si rafforza —
+> ma **tre numeri sì**. La sezione «Rifacimento con N = 23» in fondo li elenca, e
+> le righe interessate qui sotto rimandano lì. Il testo originale resta com'era:
+> è il verbale di cosa si sapeva prima, e riscriverlo cancellerebbe la sola cosa
+> che rende leggibile la differenza.
 
 ## La risposta
 
@@ -21,9 +30,12 @@ Tre numeri, in ordine di importanza:
 
 | | valore | significato |
 |---|---|---|
-| **DSR del differenziale candidato − benchmark** | **0.025** | La soglia per il migliore di 22 ipotesi è 0.85 di Sharpe annuo; il differenziale osservato è 0.28. Sotto la soglia. |
+| **DSR del differenziale candidato − benchmark** | **0.025** † | La soglia per il migliore di 22 ipotesi è 0.85 di Sharpe annuo; il differenziale osservato è 0.28. Sotto la soglia. |
 | **delta MAR medio della procedura di selezione, fuori campione** | **−0.04** | Scegliere la migliore di 23 varianti su tre anni e usarla l'anno dopo non batte il non scegliere niente. |
 | **IC 95% sul delta di MAR, bootstrap a blocchi** | **[−0.31, +0.82]** | Contiene lo zero. P(delta ≤ 0) = 29%. |
+
+† Ricalcolato a N = 23 e a parità di volatilità: **0.074**. Sempre sotto ogni
+soglia, e la conclusione è la stessa. Vedi «Rifacimento con N = 23».
 
 ## Perché i tre test dicono cose che sembrano diverse
 
@@ -177,6 +189,8 @@ benchmark — sposta il test su quella domanda.
 |---|---|---|---|---|
 | **exit_cloud_exit − base** | **+0.28** | **0.85** | **0.829** | **0.025** |
 
+*(Numeri a N = 22 e senza correzione di scala. Aggiornati in fondo.)*
+
 Lettura, riga per riga:
 
 * il vantaggio esiste ed è positivo: +0.28 di Sharpe annuo sul benchmark;
@@ -293,3 +307,111 @@ Il modulo è `engine/validation.py`; il catalogo delle ipotesi, da cui si ricava
 N, è `engine/hypotheses.py` — `N_HYPOTHESES` è la lunghezza del catalogo, così il
 numero che entra nel Deflated Sharpe non può divergere da quello che è stato
 davvero provato.
+
+---
+
+# Rifacimento con N = 23
+
+Eseguito il 2026-09-15, dopo l'aggiunta di `sizing_notional` a
+`engine.hypotheses.CATALOGUE`. Due cambiamenti, uno di conteggio e uno di metodo.
+
+**Il conteggio.** `N_HYPOTHESES` passa da 22 a 23, quindi la soglia del DSR sale
+per *tutte* le ipotesi precedenti. È il meccanismo previsto dalla regola 4, e qui
+si vede quanto morde: non è solo N a salire, è la **dispersione** dei tentativi.
+`sizing_notional` ha il differenziale grezzo più alto di tutti — +1.43 di Sharpe
+annuo contro +0.28 di `cloud_exit` — quindi allarga di molto la distribuzione dei
+ventitré tentativi, e la soglia del migliore-per-caso passa da **0.85 a 1.19**.
+
+**Il metodo.** Serviva un test che il documento originale non aveva.
+`sizing_notional` gira a **3.35 volte la volatilità del benchmark**: il suo
+differenziale grezzo è positivo *per costruzione*, e il DSR calcolato su quello
+misura la scala, non il vantaggio. È la stessa trappola del MAR che lusinga la
+leva (`results/universe_extended.md`), spostata di una formula.
+`engine.validation.volatility_matched` riscala ogni serie alla volatilità del
+benchmark prima di differenziare. Per le ventidue varianti che girano allo stesso
+`risk_pct` il fattore è fra 0.6 e 1.0 e cambia poco; per la ventitreesima cambia
+tutto — ed è per questo che si applica a tutte, invece di trattarne una in modo
+speciale.
+
+## I numeri
+
+### Differenziale grezzo, N = 23 (non usare per concludere)
+
+| | vol/base | Sharpe annuo | soglia (23) | PSR | DSR |
+|---|---|---|---|---|---|
+| **sizing_notional − base** | 3.35 | **+1.43** | 1.19 | 1.000 | **0.784** |
+| exit_cloud_exit − base | 0.96 | +0.28 | 1.19 | 0.829 | **0.001** |
+| exit_kijun_cross − base | 0.61 | −0.73 | 1.19 | 0.006 | 0.000 |
+| signal_sanyaku − base | 0.76 | −0.48 | 1.19 | 0.054 | 0.000 |
+
+Letto così, la ventitreesima ipotesi sembra l'unica viva del progetto: DSR 0.784,
+"dubbio" invece di "non distinguibile", e il differenziale più alto mai misurato
+qui dentro. **È un artefatto**, e la riga `vol/base` dice quale.
+
+### Differenziale a parità di volatilità, N = 23 (il test valido)
+
+| | vol/base | Sharpe annuo | soglia (23) | PSR | DSR |
+|---|---|---|---|---|---|
+| **exit_cloud_exit − base** | 0.96 | **+0.48** | 0.89 | 0.952 | **0.074** |
+| **sizing_notional − base** | 3.35 | **+0.20** | 0.89 | 0.750 | **0.011** |
+
+Riscalata alla volatilità del benchmark, la ventitreesima ipotesi passa da +1.43
+a **+0.20** di Sharpe annuo: **l'86% del suo vantaggio apparente era scala.** Il
+DSR crolla da 0.784 a **0.011**, il più basso dei due. Non è distinguibile dal
+rumore di ventitré tentativi, e nemmeno dal rumore di uno solo — il suo PSR è
+0.750, sotto il 95% convenzionale anche ignorando del tutto quante ipotesi sono
+state provate.
+
+Nello stesso test `cloud_exit` risulta il differenziale più alto dei ventitré, con
+DSR 0.074: più alto del 0.025 pubblicato, perché la correzione di scala restringe
+la dispersione dei tentativi e abbassa la soglia da 1.19 a 0.89. Resta comunque
+**non distinguibile**, e resta l'ipotesi non falsificata che era.
+
+### La procedura di selezione, con 24 varianti nel pool
+
+| | pubblicato (23 varianti) | ora (24 varianti) |
+|---|---|---|
+| delta MAR medio, fuori campione | −0.04 | **−0.10** |
+| mediana | +0.08 | +0.04 |
+| finestre positive | 5/8 | 4/8 |
+| ρ di rango IS vs OOS, mediana | 0.14 | **+0.02** |
+
+`sizing_notional` viene scelta in **1 finestra su 8**, e in quella finestra fa
+**−0.08** di MAR contro il benchmark. Aggiungere un'ipotesi al pool ha peggiorato
+la procedura, che è il comportamento che ci si aspetta aggiungendo rumore a un
+menu di scelte fra cui non c'è niente di buono.
+
+## Verdetto sulla ventitreesima ipotesi
+
+**Falsificata come vantaggio, confermata come artefatto di misura.**
+
+Il percorso, per intero, perché è istruttivo:
+
+1. la curva del rischio per trade mostrava il MAR salire da 0.89 a 1.50 —
+   **artefatto**, il MAR lusinga la leva, e a leva pura lo Sharpe è costante;
+2. lo Sharpe però saliva davvero, da 1.18 a 1.41 — **reale**, ma non per la leva:
+   sopra il 2% il tetto sul capitale spegneva il sizing ATR;
+3. formulata come regola esplicita e parametro-libera, `sizing_notional` prende
+   MAR 1.27 in-sample, quarta su ventitré — **artefatto di nuovo**, il suo maxDD
+   è 23% contro 8.9% e i due MAR non sono confrontabili;
+4. il differenziale grezzo dà DSR 0.784, il migliore del progetto — **artefatto
+   un'ultima volta**, gira a 3.35× la scala;
+5. a parità di volatilità: **+0.20 di Sharpe annuo, DSR 0.011, 2 asset su 6.**
+
+Quattro livelli di misura, ognuno dei quali sembrava un risultato e nessuno dei
+quali lo era. Lo Sharpe che sale da 1.18 a 1.41 resta vero: semplicemente non
+sopravvive a essere confrontato a parità di rischio con le altre ventidue cose
+già provate sugli stessi dati.
+
+## Cosa cambia nel resto del progetto
+
+* **N = 23** è ora la lunghezza di `engine.hypotheses.CATALOGUE`, e ogni futuro
+  DSR la usa senza che nessuno debba ricordarsene.
+* **Il benchmark non si muove**: 0.87 / 1.39 / 7.7% / 8.9% / 303 trade. Nessun
+  numero di `benchmark_donchian.md`, `comparison.md`, `ablation.md` o
+  `ichimoku_tests.md` dipende da N.
+* **La conclusione su `cloud_exit` non cambia**, e il suo DSR corretto (0.074) è
+  più alto di quello pubblicato (0.025). Resta sotto ogni soglia: non falsificata,
+  non confermata.
+* **La soglia è ora 0.89 di Sharpe annuo** (a parità di volatilità) contro lo 0.85
+  di prima. Chi volesse una ventiquattresima ipotesi la alzerebbe ancora.

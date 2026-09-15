@@ -377,12 +377,19 @@ def test_la_probabilita_negativa_e_coerente_con_i_quantili():
 # il conteggio delle ipotesi
 # --------------------------------------------------------------------------
 
-def test_il_catalogo_conta_ventidue_ipotesi():
-    """Il numero che entra nel Deflated Sharpe non può divergere dal provato."""
-    assert hypotheses.N_HYPOTHESES == 22
+def test_il_catalogo_conta_ventitre_ipotesi():
+    """Il numero che entra nel Deflated Sharpe non può divergere dal provato.
+
+    Se questo test fallisce dopo aver aggiunto una voce al catalogo, **non** va
+    aggiornato di riflesso: va prima ricalcolato il DSR, perché ogni ipotesi in
+    più alza la soglia per tutte le precedenti. Aggiornare il numero e basta
+    lascerebbe pubblicati dei DSR calcolati con un N che non esiste più.
+    """
+    assert hypotheses.N_HYPOTHESES == 23
     assert len(hypotheses.CATALOGUE) == hypotheses.N_HYPOTHESES
     assert hypotheses.BASE_NAME not in hypotheses.CATALOGUE
     assert hypotheses.CANDIDATE in hypotheses.CATALOGUE
+    assert "sizing_notional" in hypotheses.CATALOGUE
 
 
 def test_il_pool_di_selezione_contiene_anche_la_rinuncia():
@@ -400,3 +407,59 @@ def test_metrics_compute_accetta_gli_anni_espliciti():
     esplicito = metrics.compute(res, 100_000.0, years=2.0)
     assert esplicito.cagr == pytest.approx(1.21 ** 0.5 - 1, rel=1e-9)
     assert esplicito.cagr < dedotto.cagr
+
+
+# --------------------------------------------------------------------------
+# normalizzazione di scala prima del differenziale
+# --------------------------------------------------------------------------
+
+def test_riscalare_porta_la_volatilita_su_quella_del_benchmark():
+    rng = np.random.default_rng(11)
+    idx = pd.date_range("2016-01-01", periods=600, freq="D")
+    base = pd.Series(rng.normal(0.0004, 0.01, 600), index=idx)
+    grossa = base * 3.0 + 0.001
+    fuori = v.volatility_matched(grossa, base)
+    assert fuori.std() == pytest.approx(base.std(), rel=1e-9)
+
+
+def test_riscalare_non_cambia_lo_sharpe():
+    """È una normalizzazione di scala: sposta la volatilità, non il vantaggio."""
+    rng = np.random.default_rng(12)
+    idx = pd.date_range("2016-01-01", periods=600, freq="D")
+    base = pd.Series(rng.normal(0.0004, 0.01, 600), index=idx)
+    grossa = base.shift(1).fillna(0.0) * 2.5
+    assert v.sharpe_per_bar(v.volatility_matched(grossa, base)) == pytest.approx(
+        v.sharpe_per_bar(grossa), rel=1e-9)
+
+
+def test_riscalare_una_serie_gia_alla_stessa_scala_non_fa_niente():
+    rng = np.random.default_rng(13)
+    idx = pd.date_range("2016-01-01", periods=300, freq="D")
+    base = pd.Series(rng.normal(0.0, 0.01, 300), index=idx)
+    pd.testing.assert_series_equal(v.volatility_matched(base, base), base)
+
+
+def test_riscalare_una_serie_piatta_la_lascia_stare():
+    """Volatilità nulla: non c'è fattore che la porti da nessuna parte."""
+    idx = pd.date_range("2016-01-01", periods=50, freq="D")
+    piatta = pd.Series(0.0, index=idx)
+    altra = pd.Series(0.01, index=idx)
+    pd.testing.assert_series_equal(v.volatility_matched(piatta, altra), piatta)
+
+
+def test_il_differenziale_a_parita_di_scala_toglie_il_vantaggio_di_pura_scala():
+    """Una strategia che e' il benchmark moltiplicato per k non ha vantaggio.
+
+    Il differenziale grezzo pero' e' positivo per costruzione: e' la trappola che
+    la sezione 4c di run_validation.py evita.
+    """
+    rng = np.random.default_rng(14)
+    idx = pd.date_range("2016-01-01", periods=800, freq="D")
+    base = pd.Series(rng.normal(0.0005, 0.01, 800), index=idx)
+    solo_scala = base * 3.0
+
+    grezzo = v.differential_returns(solo_scala, base)
+    assert grezzo.mean() > 0
+
+    corretto = v.differential_returns(v.volatility_matched(solo_scala, base), base)
+    assert corretto.abs().max() == pytest.approx(0.0, abs=1e-12)

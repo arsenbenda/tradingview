@@ -84,6 +84,32 @@ def _filter_variant(gate) -> Runner:
     return run
 
 
+def _sizing_notional() -> Runner:
+    """Ingressi e uscite del benchmark, regola di dimensionamento sostituita.
+
+    La posizione vale tutto il capitale disponibile invece di
+    ``rischio / distanza dello stop``: la volatilità dello strumento governa
+    ancora l'uscita, non più la quantità. Lo stop resta 2×ATR(20).
+
+    Non ha parametri liberi — "tutto il capitale, niente margine" è un estremo,
+    non un valore scelto — ed è questo che la rende un'ipotesi e non una
+    taratura. Nasce da `results/risk_walkforward.md`: alzando ``risk_pct`` lo
+    Sharpe saliva da 1.18 a 1.41, ma non per la leva, bensì perché sopra il 2%
+    il tetto sul capitale spegneva di fatto il sizing proporzionale all'ATR su
+    142 trade su 178. Qui quell'effetto collaterale diventa una regola dichiarata,
+    misurabile e falsificabile.
+    """
+
+    def run(asset: str, df: pd.DataFrame, cost_mult: float = 1.0) -> backtest.Result:
+        return backtest.run_strategy(
+            df, donchian.DonchianWithExit(exit_mode="canale"),
+            costs=cost_table.for_asset(asset, cost_mult),
+            risk_pct=RISK_PCT, initial_capital=CAPITAL, notional_sizing=True,
+        )
+
+    return run
+
+
 BASE_NAME = "donchian_base"
 BASE: Runner = _exit_variant("canale")
 
@@ -93,6 +119,11 @@ CATALOGUE: dict[str, Runner] = {
     **{f"signal_{mode}": _signal_variant(mode) for mode in ichimoku_tf.MODES},
     **{f"exit_{mode}": _exit_variant(mode)
        for mode in donchian.DonchianWithExit.EXIT_MODES if mode != "canale"},
+    # 23ª: sizing a nozionale costante invece che proporzionale all'ATR.
+    # Non cercata — caduta fuori dalla validazione del rischio per trade — ma
+    # contata come tutte le altre: la regola 4 non fa sconti all'origine di
+    # un'ipotesi, e aggiungerla alza la soglia del DSR per le ventidue precedenti.
+    "sizing_notional": _sizing_notional(),
 }
 
 #: quante ipotesi sono state provate. Entra nel Deflated Sharpe come N.
