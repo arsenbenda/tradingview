@@ -161,10 +161,15 @@ Periodo comune 2015-08 → oggi.
 
 C'è anche `BTCUSDT_1d_binance.csv` (archivio ufficiale Binance, 3.316 barre dal
 2017-08-17, nessun buco, gate superato), scaricato per il parity. **Non è in uso
-nei runner**, per due ragioni misurate: non migliora il parity (17/23 contro
-18/23) e comincia due anni dopo, quindi adottarlo accorcerebbe il periodo comune
-da 2015-08 a 2017-08 — il 18% del campione — cambiando ogni numero pubblicato.
-Resta disponibile come controprova indipendente su BTC.
+nei runner**: comincia due anni dopo, quindi adottarlo accorcerebbe il periodo
+comune da 2015-08 a 2017-08 — il 18% del campione — cambiando ogni numero
+pubblicato.
+
+La ragione per cui era stato scaricato («somiglia di più a TradingView») **non
+vale più**, perché il deliverable non è Pine: la domanda da porsi il giorno in cui
+si volesse operare non è quale fonte somigli a TradingView, ma su quale venue si
+eseguirebbe davvero — e lì un singolo exchange batte un prezzo aggregato, che non
+è negoziabile. È una scelta da fare allora, non adesso, e cambia il campione.
 
 Tre difetti silenziosi trovati e documentati in `data/README.md`: il buco di 19
 mesi di Binance.US (fonte scartata), le barre duplicate nei festivi sui futures
@@ -352,14 +357,26 @@ Non ripetere questi test senza una ragione nuova.
    Quel che resta è **una divergenza di porting isolata ma non diagnosticata**, e
    il profilo è che **anticipiamo**: TV entra il 2020-04-17, noi il 2020-04-09; TV
    il 2023-10-08, noi il 2023-10-02. Il disaccordo è su *quale barra la trinità si
-   forma*, non sul fatto che si formi. Per andare oltre serve confrontare **i
-   valori degli indicatori barra per barra** — export OHLCV o export dei plot —
-   non la lista trade. Con la sola lista trade questo è il punto di arresto.
+   forma*, non sul fatto che si formi.
 
-   Conseguenza da non perdere: il catalogo valida la v5.5 **a default**, mentre il
-   preset è una strategia diversa e non validata. Se un giorno si dovesse operare,
-   configurazione eseguita e configurazione validata devono essere lo stesso
-   oggetto — oggi sarebbero due.
+   **E lì resta, perché il deliverable non è più Pine.** Deciso il 2026-09-15: la
+   strategia girerà in Python. Non c'è nessun Pine da eguagliare, quindi il
+   residuo smette di essere un difetto da chiudere e diventa una differenza
+   dichiarata fra il motore e lo script che lo ha ispirato. Andare oltre
+   richiederebbe l'export degli indicatori barra per barra, e non servirebbe a
+   niente che qualcuno debba usare. **Questa questione è chiusa, non sospesa.**
+
+   Resta invece vivo quello che il parity ha **prodotto**, e che vale
+   indipendentemente da TradingView: il bug della pausa era reale in qualunque
+   riferimento — una strategia ferma per l'83% delle barre è rotta anche senza
+   niente con cui confrontarla — e la regola sul foglio `Properties` vale per
+   qualsiasi export si vorrà mai confrontare.
+
+   Sopravvive anche il vincolo, che cambia solo di indirizzo: **ciò che esegue e
+   ciò che è stato validato devono essere lo stesso oggetto.** Non era un fatto su
+   TradingView, era un fatto sul metodo. In Python si applica alla configurazione
+   che il runner costruisce, ed è la ragione per cui ogni riga del registro
+   forward porta l'impronta di quella configurazione.
 
 5. **Dati fuori campione veri.** Nessun test su questo campione può più
    distinguere un vantaggio di 0.28 di Sharpe annuo da zero: undici anni e sei
