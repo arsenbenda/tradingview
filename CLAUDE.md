@@ -120,12 +120,16 @@ Non ripetere questi test senza una ragione nuova.
 
 ## Questioni aperte
 
-1. **Ichimoku come meccanismo di uscita** invece che di ingresso. È l'unico
-   pezzo delle strategie Pine non ancora isolato, ed è anche l'unico che non
-   compete con il breakout: lo gestisce dopo.
-2. **Ichimoku simmetrico bull/bear come generatore di segnale autonomo.** Mai
-   testato: l'ablazione lo usa come filtro, la v5.5 è long-only e la v3.2 ha gli
-   short pesantemente gatati. È un buco reale.
+1. ~~Ichimoku come uscita~~ e ~~Ichimoku simmetrico come segnale~~: **testati, e
+   funzionano** (`results/ichimoku_tests.md`). Tutte e sette le varianti battono
+   il benchmark. Il candidato migliore è **ingressi Donchian + uscita sulla
+   nuvola** (`cloud_exit`): MAR 1.15 contro 0.87, Sharpe 1.53, CAGR più alto *e*
+   drawdown più basso insieme, stesso numero di trade, insensibile ai costi
+   doppi. Attenzione: `ichimoku sanyaku` ha il MAR più alto (1.38) ma i guadagni
+   sono concentrati sulle crypto e perde 0.23 raddoppiando i costi.
+2. **Validazione del candidato**: walk-forward, purged k-fold con embargo,
+   Deflated Sharpe sulle 22 ipotesi testate finora. Nessun numero prodotto
+   finora è out-of-sample.
 3. **Portafoglio invece che segnale.** Il drawdown scende da 38.7% del peggior
    asset singolo a 8.9% di portafoglio a parità di segnale. È l'unica leva che i
    dati hanno mostrato funzionare; con 15-20 strumenti e vol targeting scende
