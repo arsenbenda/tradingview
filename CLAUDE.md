@@ -285,6 +285,14 @@ Non ripetere questi test senza una ragione nuova.
   gratis. Quello che migliora davvero lo Sharpe (1.18 → 1.41) alzando `risk_pct`
   è un'altra cosa: il tetto sul capitale che sostituisce il sizing ATR con uno a
   nozionale costante. Vedi la questione aperta 5.
+* **`costs.DEFAULT` fuori dalla classe per cui e' tarato.** Vale 0.30% di
+  round-trip, giusto per crypto ed ETF e **dieci-trenta volte troppo** per un
+  future liquido (0.01-0.03%). Applicato ai futures ha fatto fallire il test
+  pre-registrato su cinquant'anni: con ~8 trade per mercato all'anno sono 2.4%
+  annuo di attrito contro un lordo del 2%, e lo Sharpe passa da +1.03 a **−0.30**
+  solo per quella riga (`results/futures_50y.md`). **Per una strategia che opera
+  spesso il modello di costo e' un parametro di primo ordine, non un dettaglio**,
+  e va specificato per classe di strumento prima di ogni altra cosa.
 * **Cercare la ventiquattresima ipotesi su questi dati.** Ogni ipotesi in più
   alza la soglia del DSR per tutte le precedenti, e la ventitreesima l'ha
   dimostrato sul campo: la soglia del differenziale grezzo è passata da 0.85 a
