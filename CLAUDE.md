@@ -22,6 +22,8 @@ python3 scripts/validate_series.py               # gate di qualità sui dati
 python3 scripts/run_parity.py --xlsx data/tradingview/*.xlsx   # motore contro Strategy Tester
 python3 scripts/update_data.py                   # fonde le barre fresche da data/staging/
 python3 scripts/run_forward.py                   # registra le decisioni di oggi (append-only)
+python3 scripts/run_futures50.py                 # 25a ipotesi, campione futures >=30 anni: fallito
+python3 scripts/run_futures50_2.py                # 26a, campione 15-30 anni: passa e non regge
 ```
 
 ## Il giro settimanale
@@ -133,6 +135,15 @@ Sono il motivo per cui i numeri sopra sono affidabili. Vanno mantenute.
    Un candidato stabile su tutti i sotto-periodi non è una conferma se è stato
    scelto conoscendoli tutti: va validata la *procedura* di selezione, non il suo
    vincitore. `run_validation.py` fa entrambe le cose e le tiene separate.
+8. **Superare una soglia pre-registrata non chiude la domanda: la diagnostica
+   di robustezza è obbligatoria quanto il verdetto.** Il secondo test sui
+   futures (`results/futures_50y_2.md`) ha passato la soglia dichiarata — e si
+   è rivelato portato per il 110% del PnL da due mercati con quotazioni
+   stantie, un artefatto di liquidità e non un vantaggio. Concentrazione per
+   mercato, per trade, e "il risultato regge tolto il primo contribuente?"
+   vanno controllati **su ogni pass**, non solo sui fallimenti — ed è per
+   questo che `validate_series.py` deve trattare le barre ripetute come un
+   filtro da applicare prima, non solo una riga da leggere dopo.
 
 ## Architettura
 
@@ -497,6 +508,37 @@ Non ripetere questi test senza una ragione nuova.
    e da un LLM che ha in addestramento l'esito di ogni evento fino al 2026. Quel
    registro è l'unico out-of-sample non contaminato che il progetto possa avere,
    e comincia a valere qualcosa fra qualche centinaio di barre, non domani.
+
+   **I due colpi su pysystemtrade sono stati sparati, ed entrambi negativi.**
+
+   *Primo test* (`results/preregistrazione_futures.md` → `results/futures_50y.md`):
+   30 mercati ≥30 anni, 1970-2024. **Fallito**: SR/SE −2.17 contro soglia 1.96. La
+   causa era mia — `costs.DEFAULT`, tarato su crypto/ETF, applicato a futures a
+   dieci-trenta volte il loro costo reale. A costi realistici lo stesso run
+   faceva Sharpe 1.03, ma quel numero non è utilizzabile: è stato ottenuto
+   cambiando il costo *dopo* aver visto fallire quello dichiarato, che è
+   esattamente ciò che la pre-registrazione esiste per impedire.
+
+   *Secondo test* (`results/preregistrazione_futures_2.md` →
+   `results/futures_50y_2.md`): 35 mercati 15-30 anni, disgiunti dal primo,
+   1995-2024, con il costo ricalibrato come frazione della volatilità
+   giornaliera **di ciascun mercato** invece di una percentuale fissa —
+   correggendo esattamente l'errore del primo test. **Passa alla lettera** (SR/SE
+   2.44 contro soglia 1.96) **e non regge alla prima diagnostica**: il 110% del
+   PnL viene da due soli mercati, MILK e MILKWET, entrambi già segnalati da
+   `validate_series.py` per quotazioni stantie (58% e 11% delle barre copiate
+   dalla precedente). Tolto il solo migliore dei due, SR/SE scende a 1.06, sotto
+   soglia. Il meccanismo è verificato, non solo sospettato: prezzo fermo → ATR
+   collassato → stop minuscolo → sizing gonfiato → R-multiple da 15 a 40 quando
+   il prezzo infine si muove. Non un vantaggio: un artefatto di liquidità che
+   assomiglia a un vantaggio.
+
+   **Entrambi i campioni della fonte sono ora bruciati** (≥30 anni e 15-30 anni).
+   In nessuno dei due il trend following ha mostrato un vantaggio che sopravviva
+   al controllo. La regola che ne resta, per qualunque campione nuovo in futuro:
+   **il gate di qualità dei dati deve escludere le serie con troppe barre
+   ripetute *prima* di guardare un risultato**, non dopo — `validate_series.py`
+   calcola già quel numero, restava una segnalazione e va promosso a filtro.
 
 6. ~~Validare la v5.5 come si è validato tutto il resto~~: **chiusa, con esito
    negativo.** Eseguita il 2026-09-15 con lo stesso identico protocollo del
