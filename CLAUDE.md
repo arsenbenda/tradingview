@@ -8,7 +8,7 @@ perché TradingView non espone API per lo Strategy Tester.
 
 ```bash
 pip install pandas numpy pytest
-python3 -m pytest tests/ -q                      # 113 test, devono passare tutti
+python3 -m pytest tests/ -q                      # 118 test, devono passare tutti
 python3 scripts/run_benchmark.py                 # benchmark, i sei asset
 python3 scripts/run_benchmark.py --universe extended   # gli stessi parametri sui quindici
 python3 scripts/run_benchmark.py --universe no-crypto  # i tredici senza BTC ed ETH
@@ -141,9 +141,9 @@ Sono il motivo per cui i numeri sopra sono affidabili. Vanno mantenute.
    è rivelato portato per il 110% del PnL da due mercati con quotazioni
    stantie, un artefatto di liquidità e non un vantaggio. Concentrazione per
    mercato, per trade, e "il risultato regge tolto il primo contribuente?"
-   vanno controllati **su ogni pass**, non solo sui fallimenti — ed è per
-   questo che `validate_series.py` deve trattare le barre ripetute come un
-   filtro da applicare prima, non solo una riga da leggere dopo.
+   vanno controllati **su ogni pass**, non solo sui fallimenti. Il filtro
+   corrispondente è stato applicato: `validate_series.py` ora blocca le serie
+   oltre il 5% di barre ripetute invece di limitarsi a stamparne il conteggio.
 
 ## Architettura
 
@@ -210,7 +210,16 @@ indice FMP, e il disallineamento della convenzione oraria fra futures ed ETF
 (correlazione dei rendimenti 0.88 con volatilità identiche). **Una sola famiglia
 di fonti per backtest.**
 
-`scripts/validate_series.py` va eseguito su ogni serie nuova prima di usarla.
+`scripts/validate_series.py` va eseguito su ogni serie nuova prima di usarla, e
+dal 2026-09-16 **blocca** invece di limitarsi a segnalare: una serie con più del
+5% di barre identiche alla precedente, o con prezzi non positivi, è dichiarata
+NON UTILIZZABILE. Da codice: `utilizzabile(path) -> (bool, perché)`, da chiamare
+prima di calcolare qualunque rendimento — un'esclusione decisa dopo aver visto
+quali serie salvano il risultato non è un gate di qualità, è una selezione.
+
+I quindici strumenti del progetto hanno **zero** barre ripetute, quindi la soglia
+non tocca nessun numero pubblicato: l'unica serie che blocca è
+`WTI_spot_1d_CLOSEONLY.csv`, un residuo close-only che nessun runner usa.
 
 ## Cosa è già stato escluso, e perché
 
