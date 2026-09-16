@@ -377,7 +377,7 @@ def test_la_probabilita_negativa_e_coerente_con_i_quantili():
 # il conteggio delle ipotesi
 # --------------------------------------------------------------------------
 
-def test_il_catalogo_conta_ventiquattro_ipotesi():
+def test_il_catalogo_conta_venticinque_ipotesi():
     """Il numero che entra nel Deflated Sharpe non può divergere dal provato.
 
     Se questo test fallisce dopo aver aggiunto una voce al catalogo, **non** va
@@ -389,12 +389,13 @@ def test_il_catalogo_conta_ventiquattro_ipotesi():
     ricalcolato prima di toccare questa riga: `results/validation.md`, sezione
     «Rifacimento con N = 24».
     """
-    assert hypotheses.N_HYPOTHESES == 24
+    assert hypotheses.N_HYPOTHESES == 25
     assert len(hypotheses.CATALOGUE) == hypotheses.N_HYPOTHESES
     assert hypotheses.BASE_NAME not in hypotheses.CATALOGUE
     assert hypotheses.CANDIDATE in hypotheses.CATALOGUE
     assert "sizing_notional" in hypotheses.CATALOGUE
     assert "sanyaku_v55" in hypotheses.CATALOGUE
+    assert "canali_su_chiusure" in hypotheses.CATALOGUE
 
 
 def test_il_pool_di_selezione_contiene_anche_la_rinuncia():

@@ -78,7 +78,7 @@ benchmark. Sette varianti lo battono in-sample, ma **nessuna sopravvive alla
 validazione fuori campione** (`results/validation.md`): il miglior candidato ha un
 Deflated Sharpe di **0.074** sul differenziale a parità di volatilità contro il
 benchmark, e la procedura che lo seleziona vale −0.10 di MAR fuori campione.
-Dopo **ventiquattro** ipotesi — l'ultima delle quali è la strategia Pine da
+Dopo **venticinque** ipotesi — l'ultima delle quali è la strategia Pine da
 cinquantatré input che il progetto doveva validare all'inizio — il benchmark è
 ancora la cosa più difficile da battere.
 
@@ -251,6 +251,19 @@ Non ripetere questi test senza una ragione nuova.
   alto del progetto: una correva troppo, l'altra troppo poco, e la stessa
   correzione a parità di volatilità le uccide entrambe. Vedi
   `results/validation.md`, sezione «Rifacimento con N = 24».
+* **`canali_su_chiusure`, la venticinquesima ipotesi**: **non falsificata, e
+  comunque non distinguibile.** Canali di Donchian sulle chiusure invece che su
+  massimi e minimi. Non cercata: è uscita dal controllo sulla portabilità dei
+  dati close-only di `pysystemtrade` (vedi questione 5). Differenziale grezzo
+  **+1.13** di Sharpe annuo — il secondo più alto del progetto — ma gira a
+  **1.36× la volatilità** del benchmark, e a parità di volatilità vale **+0.54
+  con DSR 0.092** contro una soglia di 0.94. **È il miglior candidato che il
+  progetto abbia mai prodotto, ed è comunque sotto soglia**: più alto di
+  `cloud_exit` (0.054), che resta l'unico altro sopravvissuto.
+  Il suo costo è registrato: la soglia è passata da 0.89 a 0.94 e il DSR di
+  `cloud_exit` da 0.075 a 0.054, per il solo fatto di aver provato una cosa in
+  più. **Quarto artefatto di scala del progetto**, dopo `sizing_notional`
+  (3.35×), `sanyaku_v55` (0.64×) e le crypto da sole (2.6×).
 * **Il portafoglio come leva di rendimento.** Allargare da sei a quindici
   strumenti dimezza il drawdown (8.9% → 4.1%) ma taglia il CAGR di due terzi
   (7.7% → 2.5%): il MAR **scende** a 0.61. La diversificazione riduce il rischio,
@@ -443,6 +456,31 @@ Non ripetere questi test senza una ragione nuova.
    resterebbero valide una per una, ma confrontare una decisione su dati di
    lunedì con una su dati di giovedì non vuol dire niente, e nulla nel file lo
    direbbe.
+
+   **La strada più promettente non è aspettare: è un campione nuovo.** Cercata il
+   2026-09-16, e trovata: `robcarver17/pysystemtrade` pubblica le serie **continue
+   già back-adjusted** di diverse centinaia di mercati futures, gratis — CORN dal
+   **1972**, GOLD dal 1975, US10 e SP500 dal 1982, CRUDE dal 1990. Contro gli
+   undici anni su sei asset di qui.
+
+   **Ma il benchmark non è trasportabile lì, ed è stato misurato**: quei dati sono
+   *solo chiusure*, niente OHLC. Con i canali sulle chiusure i trade passano da
+   303 a 469 e la posizione differisce nel **13% dei giorni** — non è lo stesso
+   benchmark, quindi nessun numero ottenuto lì sarebbe confrontabile con lo 0.87.
+   Scomposto nei due effetti: non vedere massimi e minimi nella *decisione* vale
+   **+0.83 di MAR**, non poter essere colpiti dallo stop *durante la giornata*
+   vale **−0.25**. Il secondo è il limite serio: su dati close-only lo stop
+   intragiornaliero non è simulabile, quindi si può validare solo una strategia
+   che esce in chiusura, con code più grasse sui gap.
+
+   **La conseguenza però è la cosa più importante di tutta la ricerca sui tempi.**
+   Il penalty del Deflated Sharpe conta quante cose sono state provate *su un dato
+   campione*. Su cinquant'anni e centinaia di mercati mai toccati, una regola
+   **dichiarata prima** riparte da N = 1, non da 25. Un campione nuovo azzera il
+   contatore — ed è l'unica via d'uscita dalla trappola dei test multipli che non
+   richieda di aspettare quattro anni. Resta però vero che l'LLM che lo
+   analizzerebbe ha in addestramento l'esito di quei cinquant'anni, e che quella
+   curatela è le scelte di rollo di una persona sola: vanno dichiarati entrambi.
 
    Il sorvegliante si accorge del digiuno da solo («registro fermo da N giorni»,
    dopo cinque), che è insieme la prova che il meccanismo funziona e la misura di

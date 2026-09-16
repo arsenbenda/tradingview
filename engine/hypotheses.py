@@ -138,6 +138,41 @@ def _sanyaku_v55() -> Runner:
     return run
 
 
+def _canali_su_chiusure() -> Runner:
+    """Canali di Donchian calcolati sulle chiusure invece che su massimi e minimi.
+
+    Non cercata: è uscita dal controllo sulla portabilità dei dati close-only di
+    `pysystemtrade`, che ha cinquant'anni di storia su centinaia di mercati ma
+    nessun OHLC. La domanda era se il benchmark fosse trasportabile su quei dati;
+    la risposta è no — con i canali sulle chiusure i trade passano da 303 a 469 e
+    la posizione differisce nel 13% dei giorni, quindi i numeri non sarebbero
+    confrontabili con lo 0.87.
+
+    Misurarla però è stato un test d'ipotesi a tutti gli effetti, e la regola 4
+    non guarda all'intenzione: differenziale grezzo +1.13 di Sharpe annuo, ma a
+    **1.36× la volatilità** del benchmark, e a parità di volatilità +0.45 contro
+    una soglia di 0.89. Il quarto artefatto di scala del progetto.
+
+    L'esecuzione resta sui dati veri: qui cambia solo da dove viene il segnale.
+    """
+
+    def run(asset: str, df: pd.DataFrame, cost_mult: float = 1.0) -> backtest.Result:
+        chiusure = df.copy()
+        for c in ("open", "high", "low"):
+            chiusure[c] = chiusure["close"]
+        sig = donchian.signals(chiusure, allow_short=True)
+        return backtest.run(
+            df,
+            entry_long=sig["entry_long"], exit_long=sig["exit_long"],
+            entry_short=sig["entry_short"], exit_short=sig["exit_short"],
+            stop_distance=sig["stop_distance"],
+            costs=cost_table.for_asset(asset, cost_mult),
+            risk_pct=RISK_PCT, initial_capital=CAPITAL,
+        )
+
+    return run
+
+
 BASE_NAME = "donchian_base"
 BASE: Runner = _exit_variant("canale")
 
@@ -157,6 +192,9 @@ CATALOGUE: dict[str, Runner] = {
     # nuovo — ma si conta come tutte le altre, e alzare N a 24 alza la soglia
     # del DSR anche per `cloud_exit` e per `sizing_notional`.
     "sanyaku_v55": _sanyaku_v55(),
+    # 25ª: canali sulle chiusure. Come la 23ª e la 24ª non è stata cercata —
+    # è caduta fuori da un controllo sui dati — ma si conta come tutte le altre.
+    "canali_su_chiusure": _canali_su_chiusure(),
 }
 
 #: quante ipotesi sono state provate. Entra nel Deflated Sharpe come N.
