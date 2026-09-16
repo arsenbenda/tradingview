@@ -116,12 +116,15 @@ Sono il motivo per cui i numeri sopra sono affidabili. Vanno mantenute.
 4. **Ogni ipotesi testata va contata.** Il conteggio non sta più a mano: è la
    lunghezza di `engine/hypotheses.CATALOGUE`, e da lì entra nel Deflated Sharpe.
    Aggiungere un'ipotesi significa aggiungere una riga a quel catalogo, e la
-   soglia si alza da sola. Con ventiquattro ipotesi il migliore per caso migliora
+   soglia si alza da sola. Con venticinque ipotesi il migliore per caso migliora
    comunque qualcosa — di quanto, lo dice `run_validation.py`.
    La ventitreesima è costata cara alle precedenti, ed è istruttivo: non è solo N
    a salire, è la **dispersione** dei tentativi. La ventiquattresima lo conferma
    dal lato opposto: mediocre e in mezzo alla distribuzione, ha lasciato la soglia
    dov'era (0.89) e il DSR di `cloud_exit` è perfino salito di un millesimo.
+   La venticinquesima è tornata a costare: essendo il differenziale più alto mai
+   visto ha riallargato la dispersione, portando la soglia da 0.89 a **0.94** e
+   riabbassando `cloud_exit` da 0.075 a 0.054.
    Un'ipotesi estrema costa molto alle altre anche quando è sbagliata; una
    mediocre non costa quasi niente. Vale anche il contrario — un
    confronto **a parità di volatilità** restringe quella dispersione, e va fatto
@@ -313,7 +316,7 @@ Non ripetere questi test senza una ragione nuova.
   solo per quella riga (`results/futures_50y.md`). **Per una strategia che opera
   spesso il modello di costo e' un parametro di primo ordine, non un dettaglio**,
   e va specificato per classe di strumento prima di ogni altra cosa.
-* **Cercare la ventiquattresima ipotesi su questi dati.** Ogni ipotesi in più
+* **Cercare la ventiseiesima ipotesi su questi dati.** Ogni ipotesi in più
   alza la soglia del DSR per tutte le precedenti, e la ventitreesima l'ha
   dimostrato sul campo: la soglia del differenziale grezzo è passata da 0.85 a
   **1.19** di Sharpe annuo, e il DSR di `cloud_exit` da 0.025 a 0.001, per il solo
