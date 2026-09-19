@@ -175,4 +175,108 @@ quante epoche, e il risultato regge togliendo il primo contribuente?
 
 ## Verdetto
 
-*(vuoto: da compilare nel commit successivo)*
+**La nuvola NON agisce da supporto e resistenza — e il segno è quello sbagliato.**
+
+Periodo 2015-08-10 → 2026-09-14, sei asset, seed 20260919.
+Riproducibile con `python3 scripts/run_prereg_levels.py`.
+
+### Primario
+
+| | eventi decisi | P(rifiuto) |
+|---|---|---|
+| nuvola (cloud_top + cloud_bot) | 791 | **0.439** |
+| suo placebo, spostato di 0.5-1.5 ATR | 3.870 | **0.475** |
+
+**Δ = −0.037**, IC 95% **[−0.075, +0.003]**, P(Δ ≤ 0) = **96.5%**, delta positivo su
+**1 asset su 6**. Nessuna delle tre condizioni dichiarate è soddisfatta, e la
+prima non è soddisfatta *nel verso opposto*: la nuvola trattiene il prezzo
+**meno** di un livello qualunque messo alla stessa distanza.
+
+Per bordo: `cloud_top` −0.017 [−0.068, +0.036], `cloud_bot` −0.056 [−0.111, +0.001].
+
+Per asset: BTC −0.073, ETH −0.011, GOLD −0.043, CRUDE −0.055, CORN +0.003,
+EQUITY −0.046. Cinque su sei negativi.
+
+### Il placebo si comporta come deve
+
+`P(rifiuto | placebo) = 0.475`, cioè **una monetina**. Era la condizione senza la
+quale nulla di questo test sarebbe interpretabile: un livello arbitrario non deve
+avere alcuna proprietà, e non ne ha. Il disegno funziona.
+
+Ed è stato verificato anche il punto in cui la pre-registrazione era troppo
+sicura di sé. Dichiarava il placebo «appaiato per costruzione sulla distanza
+percorsa», ma un livello spostato viene toccato in un *altro* momento del
+movimento, quindi l'appaiamento era un'assunzione, non una garanzia. Misurata: la
+distanza percorsa al momento del tocco ha mediana **0.68 ATR sul reale e 0.69 sul
+placebo**, quartili 0.38/1.09 contro 0.37/1.10. La simmetria dello spostamento si
+compensa. L'assunzione regge, ma andava controllata e non asserita.
+
+### Concentrazione (regola 8)
+
+Togliendo il **solo** asset favorevole, CORN (+0.003), il risultato non si
+indebolisce: Δ = **−0.045**, IC **[−0.087, −0.004]**, che **esclude lo zero**.
+
+Va detto che qui la regola 8 lavora al contrario del solito: è scritta per
+mettere alla prova un *pass*, e applicata a un esito negativo agisce da controllo
+di robustezza sul negativo. Il risultato non dipende da un asset.
+
+### Le previsioni, e una che ho sbagliato
+
+* **`tenkan`: giusta.** Δ = −0.023 [−0.056, +0.009]. Non batte il placebo, come
+  previsto: è una media a 9 barre, il prezzo le è vicino per costruzione.
+* **`kijun`: giusta.** Δ = +0.012 [−0.029, +0.050], IC che contiene lo zero.
+* **Gli ottavi di Gann: sbagliata in parte.** Avevo previsto che nessuno battesse
+  il placebo. `gann_5_8` fa **Δ = +0.056** con P(Δ ≤ 0) = **2.5%**. Va registrato
+  come previsione mancata.
+* **La nuvola: ero genuinamente incerto**, e la risposta è arrivata netta e
+  negativa.
+
+### Perché `gann_5_8` non è una scoperta, e perché ho dichiarato prima la molteplicità
+
+È esattamente la trappola contro cui la pre-registrazione è stata scritta, ed è
+scattata. Tre ragioni, in ordine di forza:
+
+1. **È la migliore di nove.** Con nove famiglie secondarie, la probabilità di
+   vederne *almeno una* sotto il 2.5% anche se tutte e nove non valessero niente è
+   `1 − 0.975⁹ = 20.4%`. Una volta su cinque. La soglia corretta per molteplicità
+   sarebbe `0.025/9 = 0.0028`: il suo 2.5% è **nove volte troppo alto**.
+2. **`gann_6_8` è fortemente negativo e più "significativo" di quanto 5/8 sia
+   positivo**: Δ = −0.095, IC [−0.154, −0.038], che esclude lo zero. Due ottavi
+   **adiacenti** con segni opposti ed entrambi "significativi" sono la firma del
+   rumore, non di una struttura. Se si prende sul serio il 5/8 si deve prendere
+   sul serio il 6/8, e il 6/8 dice che il prezzo lo rispetta *meno* del caso.
+3. **Non c'è alcun andamento coerente fra gli ottavi**: 1/8 +0.011, 2/8 −0.064,
+   3/8 −0.049, 4/8 −0.017, 5/8 +0.056, 6/8 −0.095, 7/8 −0.021. Nessuna monotonia,
+   nessuna simmetria, nessun raggruppamento. È compatibile con sette estrazioni
+   indipendenti attorno a zero.
+
+Si aggiunge a ciò che il progetto aveva già misurato per altra via: 4/8 log, 5/8
+log e il controllo 4/8 lineare come filtri davano **tutti e tre MAR 0.67**.
+
+`gann_5_8` non può sostenere nessuna affermazione. Se la si volesse riaprire,
+servirebbe una pre-registrazione dedicata **su dati nuovi** — non su questi, che
+sono ormai visti.
+
+### Cosa questo test ha che gli altri non avevano
+
+**Potenza statistica.** È il primo risultato del progetto che non dice «non
+distinguibile» per mancanza di dati, ma **limita l'effetto**: 791 eventi reali e
+3.870 placebo danno un IC di semi-ampiezza ~0.04, quindi si può affermare che se
+un vantaggio della nuvola esiste, non è più grande di circa **+0.003** di
+probabilità di rifiuto. Non è «non lo sappiamo»: è «non c'è, entro quattro
+millesimi».
+
+Per confronto, sulle strategie il progetto non riesce a distinguere 0.28 di
+Sharpe annuo da zero, e non ci riuscirà mai su questo campione. La differenza è
+tutta nel numero di osservazioni: ~11.000 tocchi contro ~300 trade.
+
+**È la lezione trasferibile, e vale più del verdetto:** quando un'ipotesi si può
+formulare come un fenomeno invece che come una strategia, va formulata così,
+perché la strategia butta via il 97% dei dati per produrre una curva di equity.
+
+### Conteggio delle ipotesi
+
+Invariato. Il test non produce una curva di equity, non entra in
+`hypotheses.CATALOGUE` e non muove il Deflated Sharpe: **N resta 26**. Il primario
+è fallito, quindi non nasce nessun gate da contare come 27ª — la condizione
+dichiarata prima non si è verificata.

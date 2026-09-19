@@ -8,7 +8,7 @@ perché TradingView non espone API per lo Strategy Tester.
 
 ```bash
 pip install pandas numpy pytest
-python3 -m pytest tests/ -q                      # 124 test, devono passare tutti
+python3 -m pytest tests/ -q                      # 134 test, devono passare tutti
 python3 scripts/run_benchmark.py                 # benchmark, i sei asset
 python3 scripts/run_benchmark.py --universe extended   # gli stessi parametri sui quindici
 python3 scripts/run_benchmark.py --universe no-crypto  # i tredici senza BTC ed ETH
@@ -16,6 +16,7 @@ python3 scripts/run_benchmark.py --risk 4              # la stessa cosa a rischi
 python3 scripts/compare_strategies.py            # v3.2 e v5.5 contro il benchmark
 python3 scripts/run_ablation.py                  # quali componenti aggiungono valore
 python3 scripts/run_prereg_avwap.py              # 26a ipotesi pre-registrata: Peak-AVWAP
+python3 scripts/run_prereg_levels.py             # i livelli fanno da S/R? nuvola, TK, ottavi
 python3 scripts/run_ichimoku_tests.py            # Ichimoku come segnale e come uscita
 python3 scripts/run_validation.py                # walk-forward, k-fold purgato, DSR
 python3 scripts/run_risk_walkforward.py          # il rischio per trade scelto fuori campione
@@ -138,7 +139,23 @@ Sono il motivo per cui i numeri sopra sono affidabili. Vanno mantenute.
    Un candidato stabile su tutti i sotto-periodi non è una conferma se è stato
    scelto conoscendoli tutti: va validata la *procedura* di selezione, non il suo
    vincitore. `run_validation.py` fa entrambe le cose e le tiene separate.
-8. **Superare una soglia pre-registrata non chiude la domanda: la diagnostica
+8. **Quando un'ipotesi si può formulare come *fenomeno* invece che come
+   *strategia*, va formulata così.** Una strategia butta via il 97% dei dati per
+   produrre una curva di equity: undici anni diventano ~300 trade, e con 300
+   trade il progetto non distingue 0.28 di Sharpe annuo da zero, né ci riuscirà
+   mai su questo campione. La stessa domanda posta come fenomeno — «il prezzo
+   reagisce a questo livello più che a un livello qualunque alla stessa
+   distanza?» — dà **~11.000 osservazioni** e un IC di semi-ampiezza 0.04, cioè
+   **limita** l'effetto invece di non riuscire a vederlo
+   (`results/prereg_livelli_sr.md`). È la differenza fra «non lo sappiamo» e
+   «non c'è, entro quattro millesimi», ed è gratis: stessi dati, domanda
+   riformulata.
+   Il corollario è che ogni fenomeno ha bisogno di un **placebo**, e il placebo
+   va *verificato*, non asserito: qui era «lo stesso livello spostato di 0.5-1.5
+   ATR», e la dichiarazione che fosse appaiato sulla distanza percorsa era
+   un'assunzione — misurata, regge (mediana 0.68 ATR contro 0.69), ma andava
+   misurata.
+9. **Superare una soglia pre-registrata non chiude la domanda: la diagnostica
    di robustezza è obbligatoria quanto il verdetto.** Il secondo test sui
    futures (`results/futures_50y_2.md`) ha passato la soglia dichiarata — e si
    è rivelato portato per il 110% del PnL da due mercati con quotazioni
@@ -159,6 +176,7 @@ engine/
   data.py         caricamento con controlli bloccanti; CORE (6), EXTENDED (15),
                   NO_CRYPTO (13)
   filters.py      componenti da innestare sul benchmark (catalogo per l'ablazione)
+  levels.py       i livelli come fenomeno: tocco, corsa fra barriere, placebo
   forward.py      registro append-only delle decisioni + sorveglianza (sola lettura)
   ingest.py       aggiornamento delle serie: aggiunge barre, non riscrive il passato
   proposals.py    coda delle proposte: il solo canale da diagnosi a modifica
@@ -169,7 +187,8 @@ scripts/          runner riproducibili + estrattori dati + gate di qualità
 strategies/       i due Pine originali, invariati
 results/          benchmark_donchian.md, comparison.md, ablation.md,
                   ichimoku_tests.md, validation.md, universe_extended.md,
-                  risk_walkforward.md
+                  risk_walkforward.md, prereg_peak_avwap.md,
+                  prereg_livelli_sr.md
 data/universe_declaration.md   la lista dei quindici, dichiarata prima dei dati
 research/         state-of-the-art.md — ricognizione della letteratura
 data/README.md    fonti, difetti trovati, perimetro dei connector
@@ -252,6 +271,23 @@ Non ripetere questi test senza una ragione nuova.
   27ª.
 * **Gate di regime HTF**: il filtro Ichimoku più dannoso, −0.21 di MAR. È il
   cardine di entrambe le strategie Pine.
+* **La nuvola come supporto e resistenza** (pre-registrata in
+  `results/prereg_livelli_sr.md`, primario dichiarato prima perché è il solo
+  livello **fissato 26 barre in anticipo** — `cloud_top` a `t` è
+  `senkou_a.shift(26)` — e il solo raro e lontano: 7% delle barre a 3.3 ATR,
+  contro il 28.6% a 0.85 ATR del Tenkan). **Non agisce da S/R, e il segno è
+  quello sbagliato**: P(rifiuto) 0.439 contro 0.475 del placebo, **Δ = −0.037**
+  [−0.075, +0.003], 1 asset su 6, e togliendo il solo favorevole l'IC esclude lo
+  zero (−0.045 [−0.087, −0.004]). La nuvola trattiene il prezzo **meno** di un
+  livello arbitrario alla stessa distanza. Il placebo fa 0.475, cioè una
+  monetina: il disegno funziona.
+  Secondari esplorativi, che **non possono sostenere affermazioni** (molteplicità
+  9 dichiarata prima): `tenkan` −0.023, `kijun` +0.012, ottavi da −0.095 a
+  +0.056. `gann_5_8` esce a +0.056 con P 2.5% — ed è la trappola contro cui la
+  pre-registrazione era scritta: `1 − 0.975⁹ = 20%` di vederne almeno uno così
+  per caso, soglia corretta 0.0028, e `gann_6_8` **adiacente** è fortemente
+  negativo (−0.095, IC che esclude lo zero). Due ottavi contigui con segni
+  opposti sono rumore, non struttura.
 * **`cloud_exit` come risultato del progetto**: in-sample batte il benchmark
   (MAR 1.15 contro 0.87) ed è stabile in 7 finestre su 8 e 5 fold su 5, ma il
   vantaggio non è distinguibile dal miglior rumore di ventisei tentativi — DSR
