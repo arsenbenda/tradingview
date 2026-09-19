@@ -30,6 +30,23 @@
       "delta_mar": 0.0,
       "assets_improved": 0
     },
+    "peak_avwap": {
+      "stats": {
+        "trades": 303,
+        "cagr": 0.07719839192850508,
+        "max_dd": 0.08864504041448291,
+        "mar": 0.8708709654544005,
+        "sharpe": 1.391129696473618,
+        "sortino": 1.6931824495181196,
+        "profit_factor": 5.717109950753413,
+        "win_rate": 0.3795379537953795,
+        "avg_r": 2.0489081694555153,
+        "exposure": 0.5395282355269948,
+        "final_equity": 228321.2509658362
+      },
+      "delta_mar": 0.0,
+      "assets_improved": 0
+    },
     "ichi_cloud": {
       "stats": {
         "trades": 299,
@@ -132,23 +149,6 @@
       "delta_mar": -0.10315465864717077,
       "assets_improved": 0
     },
-    "sma_200": {
-      "stats": {
-        "trades": 266,
-        "cagr": 0.062290021723834244,
-        "max_dd": 0.08864504041448461,
-        "mar": 0.7026904317780203,
-        "sharpe": 1.2475963639104655,
-        "sortino": 1.43020135174498,
-        "profit_factor": 5.073266606298428,
-        "win_rate": 0.37593984962406013,
-        "avg_r": 1.916686546712062,
-        "exposure": 0.4621414003237824,
-        "final_equity": 195591.74632108773
-      },
-      "delta_mar": -0.1681805336763802,
-      "assets_improved": 1
-    },
     "ctrl_mid_lineare": {
       "stats": {
         "trades": 244,
@@ -217,6 +217,23 @@
       "delta_mar": NaN,
       "assets_improved": 0
     },
+    "sma_200": {
+      "stats": {
+        "trades": 266,
+        "cagr": 0.062290021723834244,
+        "max_dd": 0.08864504041448461,
+        "mar": 0.7026904317780203,
+        "sharpe": 1.2475963639104655,
+        "sortino": 1.43020135174498,
+        "profit_factor": 5.073266606298428,
+        "win_rate": 0.37593984962406013,
+        "avg_r": 1.916686546712062,
+        "exposure": 0.4621414003237824,
+        "final_equity": 195591.74632108773
+      },
+      "delta_mar": -0.1681805336763802,
+      "assets_improved": 1
+    },
     "gann_oct_4_8": {
       "stats": {
         "trades": 240,
@@ -269,5 +286,5 @@
       "assets_improved": 1
     }
   },
-  "hypotheses_tested": 15
+  "hypotheses_tested": 16
 }

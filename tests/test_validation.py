@@ -377,9 +377,21 @@ def test_la_probabilita_negativa_e_coerente_con_i_quantili():
 # il conteggio delle ipotesi
 # --------------------------------------------------------------------------
 
-def test_il_catalogo_conta_ventidue_ipotesi():
-    """Il numero che entra nel Deflated Sharpe non può divergere dal provato."""
-    assert hypotheses.N_HYPOTHESES == 22
+def test_il_catalogo_conta_ventitre_ipotesi():
+    """Il numero che entra nel Deflated Sharpe non può divergere dal provato.
+
+    Il valore è scritto a mano di proposito: è un tripwire. Chi aggiunge
+    un'ipotesi deve bumparlo consapevolmente, perché alzare N alza la soglia del
+    DSR per tutte le affermazioni precedenti — non è un dettaglio contabile.
+
+    Storia del conteggio, per non perderla:
+
+    * 22 — quindici filtri, tre segnali Ichimoku, quattro uscite;
+    * 23 — `filter_peak_avwap`, l'unica componente nuova estratta da
+      `IQ Dual Anchor Setup [IQ-TRADER]`, pre-registrata in
+      `results/prereg_peak_avwap.md`.
+    """
+    assert hypotheses.N_HYPOTHESES == 23
     assert len(hypotheses.CATALOGUE) == hypotheses.N_HYPOTHESES
     assert hypotheses.BASE_NAME not in hypotheses.CATALOGUE
     assert hypotheses.CANDIDATE in hypotheses.CATALOGUE

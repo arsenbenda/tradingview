@@ -1,10 +1,10 @@
 """Validazione fuori campione: walk-forward, k-fold purgato, Deflated Sharpe.
 
 Tutti i numeri prodotti dal progetto fino a ora vengono da un periodo unico, su
-cui sono state provate ventidue ipotesi ed è stata scelta la migliore. Quel
+cui sono state provate N ipotesi ed è stata scelta la migliore. Quel
 numero — il MAR del vincitore — non è una stima di quanto renderà il vincitore:
-è il massimo di ventidue variabili rumorose, e il massimo di ventidue variabili
-rumorose è alto anche quando nessuna delle ventidue vale niente. Questo modulo
+è il massimo di N variabili rumorose, e il massimo di N variabili rumorose è
+alto anche quando nessuna delle N vale niente. Questo modulo
 serve a misurare quanta parte del vantaggio sopravvive quando si toglie al
 candidato il vantaggio di essere stato scelto guardando i dati su cui viene poi
 misurato.
@@ -16,7 +16,7 @@ sceglierlo? Attenzione a cosa si sta validando: con un solo set di parametri
 fisso, far girare il candidato su finestre successive misura la *stabilità*, non
 la selezione — non c'è niente che venga adattato in-sample. La selezione qui è
 avvenuta a monte, sul catalogo: la variante è stata scelta perché era la migliore
-delle ventidue. Il walk-forward che mette alla prova *quella* decisione deve
+delle N. Il walk-forward che mette alla prova *quella* decisione deve
 quindi rieseguire la scelta dentro ogni finestra di training e misurare fuori
 campione ciò che la scelta ha prodotto. Il modulo supporta entrambi i protocolli
 perché rispondono a due domande legittime e diverse, ma solo il secondo è un
@@ -37,12 +37,12 @@ sistematicamente troppo bello.
 dal migliore di N strategie che non hanno alcun vantaggio? Quella soglia, ``sr0``,
 cresce con N e con la dispersione degli Sharpe provati. Il DSR è la probabilità
 che lo Sharpe vero del candidato superi quella soglia: se non è distinguibile da
-zero, il candidato è indistinguibile dal miglior rumore di ventidue tentativi.
+zero, il candidato è indistinguibile dal miglior rumore di N tentativi.
 
 Un avvertimento sul DSR, che va detto invece che nascosto: la formula assume
-prove indipendenti. Le ventidue ipotesi qui condividono base, dati e periodo, e
-sono quindi fortemente correlate; il numero di prove *indipendenti* è minore di
-ventidue. Questo rende ``sr0`` più alto del dovuto e quindi il DSR
+prove indipendenti. Le N ipotesi qui condividono base, dati e periodo, e sono
+quindi fortemente correlate; il numero di prove *indipendenti* è minore di N.
+Questo rende ``sr0`` più alto del dovuto e quindi il DSR
 **conservativo** — un DSR alto resta un risultato affidabile, un DSR basso è
 in parte imputabile alla correlazione fra le prove. La direzione dell'errore è
 nota, ed è quella prudente.
@@ -436,12 +436,12 @@ def differential_returns(strategy: pd.Series, benchmark: pd.Series) -> pd.Series
     """Rendimento attivo: quanto la strategia fa *in più* del benchmark, giorno per giorno.
 
     Serve perché la domanda di questo progetto non è mai "il candidato ha uno
-    Sharpe significativo" — ce l'hanno tutte le ventidue varianti, e ce l'ha
+    Sharpe significativo" — ce l'hanno tutte le varianti del catalogo, e ce l'ha
     anche il benchmark che non è stato scelto da nessuno: undici anni di
     esposizione a un trend follower bastano a renderlo significativo. La domanda
     è se il *vantaggio* sul benchmark è reale. Applicare lo Sharpe deflazionato
     alla serie differenziale sposta il test su quella domanda, che è quella a cui
-    la selezione fra ventidue ipotesi ha risposto guardando i dati.
+    la selezione fra le ipotesi del catalogo ha risposto guardando i dati.
 
     Non è il rendimento di un portafoglio realizzabile — comprare il candidato e
     vendere il benchmark richiederebbe il doppio del capitale e costi doppi — ma
@@ -455,7 +455,7 @@ def rank_correlation(a: dict[str, float], b: dict[str, float]) -> float:
     """Correlazione di rango di Spearman fra due classifiche sugli stessi nomi.
 
     È il test più diretto della procedura di selezione: se l'ordine delle
-    ventitré varianti dentro il training non predice il loro ordine fuori
+    le varianti dentro il training non predice il loro ordine fuori
     campione, scegliere la migliore in-sample non è meglio che scegliere a caso,
     e il vantaggio del vincitore è il vantaggio del fortunato.
     """

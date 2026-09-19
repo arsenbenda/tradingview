@@ -11,7 +11,7 @@ ipotesi di strategia è stata provata in questa sessione: il conteggio resta
 
 Non perché il candidato sia cattivo — non lo è, e in quasi tutti i sotto-periodi
 fa meglio del benchmark. Non sopravvive perché **quel "meglio" non è
-distinguibile dal miglior risultato che ventidue tentativi senza alcun vantaggio
+distinguibile dal miglior risultato che ventitré tentativi senza alcun vantaggio
 produrrebbero comunque**, e perché **la procedura che ha selezionato `cloud_exit`
 non ha valore fuori campione**: rieseguita dentro finestre di training e
 misurata dopo, aggiunge in media −0.04 di MAR, e sceglie `cloud_exit` una volta
@@ -21,8 +21,8 @@ Tre numeri, in ordine di importanza:
 
 | | valore | significato |
 |---|---|---|
-| **DSR del differenziale candidato − benchmark** | **0.025** | La soglia per il migliore di 22 ipotesi è 0.85 di Sharpe annuo; il differenziale osservato è 0.28. Sotto la soglia. |
-| **delta MAR medio della procedura di selezione, fuori campione** | **−0.04** | Scegliere la migliore di 23 varianti su tre anni e usarla l'anno dopo non batte il non scegliere niente. |
+| **DSR del differenziale candidato − benchmark** | **0.023** | La soglia per il migliore di 23 ipotesi è 0.86 di Sharpe annuo; il differenziale osservato è 0.28. Sotto la soglia. |
+| **delta MAR medio della procedura di selezione, fuori campione** | **−0.04** | Scegliere la migliore di 24 varianti su tre anni e usarla l'anno dopo non batte il non scegliere niente. |
 | **IC 95% sul delta di MAR, bootstrap a blocchi** | **[−0.31, +0.82]** | Contiene lo zero. P(delta ≤ 0) = 29%. |
 
 ## Perché i tre test dicono cose che sembrano diverse
@@ -143,15 +143,15 @@ Purge ed embargo cambiano la variante selezionata in **1 fold su 5**. Non è un
 effetto enorme, ma non è nemmeno nullo: senza potatura una scelta su cinque
 sarebbe stata decisa da osservazioni il cui esito cade dentro il test.
 
-### 4. Deflated Sharpe Ratio, N = 22
+### 4. Deflated Sharpe Ratio, N = 23
 
-Due ipotesi delle ventidue — `filter_gann_1x1` e `filter_gann_1x2` — non fanno
+Due ipotesi delle ventitré — `filter_gann_1x1` e `filter_gann_1x2` — non fanno
 alcun trade, quindi il loro Sharpe non è definito: sono contate in N, come
 devono, ed escluse dal calcolo della dispersione.
 
 #### 4a. Sullo Sharpe assoluto — non risponde alla domanda
 
-| | Sharpe annuo | soglia per il migliore di 22 | PSR | DSR |
+| | Sharpe annuo | soglia per il migliore di 23 | PSR | DSR |
 |---|---|---|---|---|
 | exit_cloud_exit | 1.53 | 0.21 | 1.000 | **1.000** |
 | **donchian (benchmark, mai selezionato)** | 1.39 | 0.21 | 1.000 | **1.000** |
@@ -163,7 +163,7 @@ procedura e non ha quindi nulla da deflazionare. Quando un test promuove
 indistintamente la cosa da dimostrare e la cosa banale che doveva battere, il
 test sta misurando altro: qui misura che undici anni di esposizione a un trend
 follower producono uno Sharpe positivo, il che era noto. La soglia è così bassa
-(0.21) perché le ventidue ipotesi sono varianti della stessa esposizione, quindi
+(0.21) perché le ventitré ipotesi sono varianti della stessa esposizione, quindi
 i loro Sharpe stanno tutti fra 1.11 e 1.53 e la loro dispersione è minima.
 
 #### 4b. Sul differenziale candidato − benchmark — il test che discrimina
@@ -173,25 +173,25 @@ ma "il candidato batte il benchmark". Applicare la deflazione alla serie
 differenziale — il rendimento giornaliero del candidato meno quello del
 benchmark — sposta il test su quella domanda.
 
-| | Sharpe annuo del differenziale | soglia per il migliore di 22 | PSR | DSR |
+| | Sharpe annuo del differenziale | soglia per il migliore di 23 | PSR | DSR |
 |---|---|---|---|---|
-| **exit_cloud_exit − base** | **+0.28** | **0.85** | **0.829** | **0.025** |
+| **exit_cloud_exit − base** | **+0.28** | **0.86** | **0.829** | **0.023** |
 
 Lettura, riga per riga:
 
 * il vantaggio esiste ed è positivo: +0.28 di Sharpe annuo sul benchmark;
-* la soglia è +0.85: è lo Sharpe differenziale che ci si aspetta dal **migliore**
-  di ventidue ipotesi che non hanno alcun vantaggio. Il vantaggio osservato è
+* la soglia è +0.86: è lo Sharpe differenziale che ci si aspetta dal **migliore**
+  di ventitré ipotesi che non hanno alcun vantaggio. Il vantaggio osservato è
   **un terzo** di quello che il caso produce gratis in un esperimento di questa
   dimensione;
-* **DSR 0.025**: la probabilità che il vantaggio vero superi quella soglia è del
-  2.5%. Non è distinguibile dal miglior rumore di ventidue tentativi;
+* **DSR 0.023**: la probabilità che il vantaggio vero superi quella soglia è del
+  2.3%. Non è distinguibile dal miglior rumore di ventitré tentativi;
 * il PSR è 0.829: anche **ignorando del tutto** quante ipotesi sono state
   provate, la probabilità che il vantaggio vero sia positivo è dell'83%, sotto
   il 95% convenzionale. Il risultato non regge nemmeno al test più indulgente
   disponibile.
 
-`cloud_exit` è, fra le ventidue, quella con il differenziale più alto (+0.0145
+`cloud_exit` è, fra le ventitré, quella con il differenziale più alto (+0.0145
 per barra). È esattamente per questo che è stata scelta, ed è esattamente per
 questo che la deflazione le si applica per intero.
 
@@ -217,7 +217,7 @@ L'intervallo contiene lo zero in tutte e quattro le configurazioni. Sul periodo
 in-sample il candidato ci va vicino (P ≈ 4-8%); sulle finestre concatenate, dove
 il vantaggio medio si dimezza, non ci va affatto: una volta su quattro o cinque
 il delta sarebbe stato negativo. E questo **senza** alcuna penalità per le
-ventidue ipotesi: aggiungendola, come fa il DSR, non resta niente.
+ventitré ipotesi: aggiungendola, come fa il DSR, non resta niente.
 
 ## Cosa resta vero
 
@@ -233,17 +233,17 @@ Un risultato negativo non cancella quello che i dati mostrano comunque.
   più, perdono di meno.
 * **Il benchmark regge.** Donchian 55/20 con parametri pubblicati negli anni
   Ottanta continua a essere la cosa più difficile da battere di questo progetto,
-  ventidue ipotesi dopo.
+  ventitré ipotesi dopo.
 
 ## Limiti dichiarati di questa validazione
 
 Nessuno dei tre favorisce la conclusione negativa: due la indeboliscono.
 
 1. **Il DSR è conservativo per costruzione.** La formula assume prove
-   indipendenti; le ventidue ipotesi condividono base, dati e periodo e sono
+   indipendenti; le ventitré ipotesi condividono base, dati e periodo e sono
    fortemente correlate, quindi il numero di prove *indipendenti* è minore di
-   ventidue e la soglia vera è più bassa di 0.85. La direzione dell'errore è
-   nota ed è quella prudente: **il DSR 0.025 è un limite inferiore**. Il PSR
+   ventitré e la soglia vera è più bassa di 0.86. La direzione dell'errore è
+   nota ed è quella prudente: **il DSR 0.023 è un limite inferiore**. Il PSR
    0.829, che non dipende da N, non ha questo problema e resta comunque sotto
    la soglia convenzionale.
 2. **Il test sul differenziale è appropriato per `cloud_exit` e inappropriato per
@@ -265,20 +265,20 @@ Nessuno dei tre favorisce la conclusione negativa: due la indeboliscono.
 ## Conseguenze pratiche
 
 1. **`cloud_exit` non va promosso a risultato del progetto.** Va descritto per
-   quello che è: la migliore di ventidue varianti su un periodo unico, con un
+   quello che è: la migliore di ventitré varianti su un periodo unico, con un
    vantaggio che non si distingue dal rumore di selezione, e che la procedura che
    lo ha trovato non ritrova quando le si toglie il senno di poi.
-2. **Non testare la ventitreesima ipotesi sugli stessi dati.** Ogni ipotesi in
+2. **Non testare la ventiquattresima ipotesi sugli stessi dati.** Ogni ipotesi in
    più alza la soglia del DSR per tutte le precedenti. Con la dispersione attuale
-   dei differenziali, arrivare a N = 40 porterebbe la soglia da 0.85 a 0.96
+   dei differenziali, arrivare a N = 40 porterebbe la soglia da 0.86 a 0.96
    di Sharpe annuo: continuare a cercare su questo campione rende *più difficile*, non più
    facile, dimostrare qualcosa.
 3. **La leva che i dati hanno mostrato funzionare resta il portafoglio.** Il
    drawdown scende da 38.7% del peggior asset singolo a 8.9% di portafoglio a
    parità di segnale: un effetto di dimensione ben maggiore di qualunque delta
-   fra le ventidue varianti, e che non dipende da una selezione. È lì che vale la
+   fra le ventitré varianti, e che non dipende da una selezione. È lì che vale la
    pena spendere il prossimo sforzo — più strumenti, vol targeting — non su un
-   ventitreesimo filtro.
+   ventiquattresimo filtro.
 4. **Il parity test contro il Pine resta l'unica verifica mai eseguita** e
    l'unica che non richiede di cercare un vantaggio nuovo.
 

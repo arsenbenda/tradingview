@@ -12,6 +12,7 @@ stessi costi.
 | Filtro | MAR | Δ MAR | Sharpe | Trade | Asset migliorati |
 |---|---|---|---|---|---|
 | ichi_chikou | 0.87 | +0.00 | 1.39 | 303 | 0/6 |
+| peak_avwap | 0.87 | +0.00 | 1.39 | 303 | 0/6 |
 | ichi_cloud | 0.86 | −0.01 | 1.38 | 299 | 3/6 |
 | adx_15 | 0.86 | −0.01 | 1.37 | 290 | 2/6 |
 | ichi_tk | 0.85 | −0.02 | 1.37 | 300 | 1/6 |
@@ -27,7 +28,14 @@ stessi costi.
 | gann_1x1 | — | — | — | **0** | 0/6 |
 | gann_1x2 | — | — | — | **0** | 0/6 |
 
-**Nessun filtro migliora la base.** Quindici ipotesi testate, il migliore pareggia
+Le due righe in cima — `ichi_chikou` e `peak_avwap` — non pareggiano la base:
+la **riproducono**. Curve di equity identiche su tutti e sei gli asset, stesso
+numero di trade. Sono condizioni selettive in generale (il gate dell'AVWAP è
+aperto sul 35.8% delle barre) ma **implicate** da un breakout a 55 barre, che le
+rende vere al 99.8% proprio sulle barre in cui si decide. Vedi
+`prereg_peak_avwap.md`.
+
+**Nessun filtro migliora la base.** Sedici ipotesi testate, il migliore pareggia
 e tutti gli altri peggiorano. Nessun risultato da correggere per test multipli,
 perché non c'è nessun risultato positivo da correggere.
 

@@ -10,7 +10,7 @@ Due salvaguardie contro l'autoinganno:
 
 * si riporta **su quanti asset su sei** il MAR migliora. Un filtro che aiuta solo
   BTC è un filtro adattato a BTC, non un filtro;
-* si riporta il **numero di ipotesi testate**. Con quindici filtri, il migliore
+* si riporta il **numero di ipotesi testate**. Con sedici filtri, il migliore
   per caso migliora comunque qualcosa: senza questo conteggio il risultato non è
   interpretabile.
 

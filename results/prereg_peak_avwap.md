@@ -90,4 +90,84 @@ Non viene eseguita qui.
 
 ## Verdetto
 
-*(vuoto: da compilare nel commit successivo)*
+**NON aggiunge valore.** Nessuna delle due condizioni pre-dichiarate è
+soddisfatta, e la previsione registrata prima del test è risultata esatta.
+
+Periodo 2015-08-10 → 2026-09-14, sei asset, un solo set di parametri.
+Riproducibile con `python3 scripts/run_prereg_avwap.py`.
+
+| | MAR | Sharpe | CAGR | maxDD | Trade |
+|---|---|---|---|---|---|
+| base (Donchian 55/20) | 0.87 | 1.39 | 7.7% | 8.9% | 303 |
+| base + `peak_avwap` | 0.87 | 1.39 | 7.7% | 8.9% | 303 |
+
+* **delta MAR di portafoglio: +0.00** (serviva > 0);
+* **migliora 0 asset su 6** (ne servivano almeno 4);
+* delta per asset **esattamente zero ovunque**: BTC 0.65, ETH 0.68, GOLD 0.19,
+  CRUDE 0.19, CORN −0.00, EQUITY 0.02, prima e dopo.
+
+### Perché: è una tautologia condizionale, non un filtro inerte
+
+Il tasso di blocco lo dice senza ambiguità: **5 ingressi bloccati su 1.728**
+(long 3/1243, short 2/485), lo **0.3%**.
+
+E il delta non è "piccolo": è **esattamente zero**. Le curve di equity con e
+senza il gate sono identiche su tutti e sei gli asset, e il numero di trade non
+cambia su nessuno (58, 51, 44, 46, 53, 51). I cinque ingressi bloccati cadevano
+tutti su barre in cui il sistema era **già in posizione**, quindi non avrebbero
+aperto niente comunque. Il filtro è un no-op esatto.
+
+Se ne vede la traccia anche nel Deflated Sharpe: il differenziale
+`peak_avwap − base` è identicamente nullo, quindi il suo Sharpe non è definito e
+la variante viene contata in N ma esclusa dalla dispersione — esattamente come
+`ichi_chikou`, e per la stessa ragione.
+
+La diagnosi però non è "l'AVWAP è una condizione vuota", e il numero che la
+separa dall'altra è questo:
+
+| il gate long è aperto su… | |
+|---|---|
+| tutte le barre | **35.8%** |
+| le sole barre di rottura a 55 barre | **99.8%** |
+
+L'AVWAP ancorato è una condizione **selettiva** — esclude due barre su tre — ma
+sulle barre in cui il benchmark entra è **già vera per costruzione**. La ragione
+è geometrica ed era scritta prima del test: un ingresso Donchian scatta sulla
+barra che chiude sopra il massimo delle 55 precedenti, quindi sopra il massimo
+delle 50 precedenti, che è proprio l'àncora; e l'AVWAP calcolato da lì in avanti
+è una media di prezzi che stanno sotto quella chiusura.
+
+È la stessa struttura del Chikou, che bloccava 0 ingressi su 1.728, e il
+risultato è letteralmente identico: nell'ablazione `peak_avwap` e `ichi_chikou`
+hanno lo stesso MAR (0.87), gli stessi 303 trade e lo stesso 0/6.
+
+### Cosa si può e non si può concludere
+
+**Si può concludere** che il Peak-AVWAP non è utilizzabile come gate su ingressi
+di breakout: le due meccaniche sono incompatibili. Lo dice anche lo script di
+origine, che sulla barra del nuovo massimo *scarta* il setup
+(*"New high: a higher high to the right; prior setup is dropped"*). L'IQ-DAS è
+uno strumento da pullback; il benchmark è uno strumento da rottura. Gatare il
+secondo col primo non è un test dell'idea, è una contraddizione nei termini.
+
+**Non si può concludere** che l'AVWAP ancorato non valga niente. Questo test non
+lo ha misurato — non poteva. L'esperimento informativo sarebbe l'AVWAP **come
+segnale autonomo**, come si è fatto per Ichimoku quando l'ablazione dei filtri
+aveva dato lo stesso tipo di risposta muta. Sarebbe un'ipotesi nuova, con la sua
+pre-registrazione, e porterebbe N a 24.
+
+### Effetto sul conteggio
+
+`N_HYPOTHESES` passa da 22 a 23, e con esso la soglia del Deflated Sharpe per
+tutte le affermazioni precedenti:
+
+| | N = 22 | N = 23 |
+|---|---|---|
+| soglia sul differenziale (Sharpe annuo) | 0.85 | **0.86** |
+| DSR di `cloud_exit` − benchmark | 0.025 | **0.023** |
+
+Il candidato più promettente del progetto vale un po' meno di ieri per il solo
+fatto che si è provata un'altra cosa. È il prezzo dichiarato in partenza, ed è
+il motivo per cui la regola resta valida: **ogni ipotesi in più costa a tutte le
+precedenti.** Questa è stata pagata consapevolmente, per una componente che non
+era mai stata misurata e che guardava i volumi invece della geometria.

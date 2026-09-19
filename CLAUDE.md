@@ -8,12 +8,13 @@ perché TradingView non espone API per lo Strategy Tester.
 
 ```bash
 pip install pandas numpy pytest
-python3 -m pytest tests/ -q                      # 70 test, devono passare tutti
+python3 -m pytest tests/ -q                      # 76 test, devono passare tutti
 python3 scripts/run_benchmark.py                 # benchmark di riferimento
 python3 scripts/compare_strategies.py            # v3.2 e v5.5 contro il benchmark
 python3 scripts/run_ablation.py                  # quali componenti aggiungono valore
 python3 scripts/run_ichimoku_tests.py            # Ichimoku come segnale e come uscita
 python3 scripts/run_validation.py                # walk-forward, k-fold purgato, DSR
+python3 scripts/run_prereg_avwap.py              # l'ipotesi pre-registrata Peak-AVWAP
 python3 scripts/validate_series.py               # gate di qualità sui dati
 ```
 
@@ -32,12 +33,12 @@ Periodo 2015-08-10 → 2026-09-14, sei asset, un solo set di parametri, costi pe
 asset. Nessuna delle due strategie Pine batte il benchmark, e perdono anche su
 BTC, l'asset su cui sono state sviluppate.
 
-Nessuno dei 15 componenti Ichimoku/Gann testati come filtro migliora il
-benchmark. Sette varianti su ventidue lo battono in-sample, ma **nessuna
-sopravvive alla validazione fuori campione** (`results/validation.md`): il
-miglior candidato ha un Deflated Sharpe di 0.025 sul differenziale contro il
-benchmark, e la procedura che lo seleziona vale −0.04 di MAR fuori campione.
-Dopo ventidue ipotesi, il benchmark è ancora la cosa più difficile da battere.
+Nessuno dei 16 componenti testati come filtro migliora il benchmark. Sette
+varianti su ventitré lo battono in-sample, ma **nessuna sopravvive alla
+validazione fuori campione** (`results/validation.md`): il miglior candidato ha
+un Deflated Sharpe di 0.023 sul differenziale contro il benchmark, e la
+procedura che lo seleziona vale −0.04 di MAR fuori campione. Dopo ventitré
+ipotesi, il benchmark è ancora la cosa più difficile da battere.
 
 ## Regole di lavoro che hanno prodotto questi risultati
 
@@ -55,13 +56,19 @@ Sono il motivo per cui i numeri sopra sono affidabili. Vanno mantenute.
 4. **Ogni ipotesi testata va contata.** Il conteggio non sta più a mano: è la
    lunghezza di `engine/hypotheses.CATALOGUE`, e da lì entra nel Deflated Sharpe.
    Aggiungere un'ipotesi significa aggiungere una riga a quel catalogo, e la
-   soglia si alza da sola. Con ventidue ipotesi il migliore per caso migliora
+   soglia si alza da sola. Con ventitré ipotesi il migliore per caso migliora
    comunque qualcosa — di quanto, lo dice `run_validation.py`.
 5. **Un filtro che aiuta un solo asset è un filtro adattato a quell'asset.** Si
    riporta sempre su quanti asset su sei migliora.
 6. **Niente ri-ottimizzazione periodica dei parametri.** È la pratica che
    produce i numeri più belli e i fallimenti più rapidi.
-7. **Un vantaggio in-sample non è un risultato finché non passa la validazione.**
+7. **Un'ipotesi che viene da fuori si pre-registra prima di eseguirla.**
+   Specifica, regola di decisione e previsione vanno scritte e committate in un
+   commit privo di risultati (`results/prereg_*.md`), così l'ordine fra
+   dichiarazione e misura sta nel git log. Serve anche a un'altra cosa: una
+   singola ipotesi dichiarata prima paga la penalità di *un* test, non quella
+   del massimo di N — che è invece il prezzo di pescare il migliore dal mucchio.
+8. **Un vantaggio in-sample non è un risultato finché non passa la validazione.**
    Un candidato stabile su tutti i sotto-periodi non è una conferma se è stato
    scelto conoscendoli tutti: va validata la *procedura* di selezione, non il suo
    vincitore. `run_validation.py` fa entrambe le cose e le tiene separate.
@@ -82,7 +89,7 @@ engine/
 scripts/          runner riproducibili + estrattori dati + gate di qualità
 strategies/       i due Pine originali, invariati
 results/          benchmark_donchian.md, comparison.md, ablation.md,
-                  ichimoku_tests.md, validation.md
+                  ichimoku_tests.md, validation.md, prereg_peak_avwap.md
 research/         state-of-the-art.md — ricognizione della letteratura
 data/README.md    fonti, difetti trovati, perimetro dei connector
 ```
@@ -135,13 +142,21 @@ Non ripetere questi test senza una ragione nuova.
   cardine di entrambe le strategie Pine.
 * **`cloud_exit` come risultato del progetto**: in-sample batte il benchmark
   (MAR 1.15 contro 0.87) ed è stabile in 7 finestre su 8 e 5 fold su 5, ma il
-  vantaggio non è distinguibile dal miglior rumore di ventidue tentativi — DSR
-  0.025, PSR 0.829, IC 95% sul delta di MAR [−0.31, +0.82]. Va descritto come
+  vantaggio non è distinguibile dal miglior rumore di ventitré tentativi — DSR
+  0.023, PSR 0.829, IC 95% sul delta di MAR [−0.31, +0.82]. Va descritto come
   *non falsificato*, mai come confermato.
-* **Cercare la ventitreesima ipotesi su questi dati.** Ogni ipotesi in più alza
-  la soglia del DSR per tutte le precedenti: da N = 22 a N = 40 la soglia passa
-  da 0.85 a 0.96 di Sharpe annuo. Continuare a cercare su questo campione rende
-  più difficile, non più facile, dimostrare qualcosa.
+* **Peak-AVWAP come filtro sugli ingressi** (da `IQ Dual Anchor Setup`,
+  pre-registrato in `results/prereg_peak_avwap.md`): **no-op esatto**. Curve di
+  equity identiche su tutti e sei gli asset, 5 ingressi bloccati su 1.728. Non è
+  una condizione vuota — il gate è aperto solo sul 35.8% delle barre — ma è
+  **implicata** da un breakout a 55 barre, che la rende vera al 99.8% sulle barre
+  in cui si decide: la stessa tautologia condizionale del Chikou. Lo script di
+  origine lo conferma, scartando il setup proprio sul nuovo massimo. Resta
+  **non misurato** l'AVWAP come *segnale autonomo*: sarebbe N = 24.
+* **Cercare la ventiquattresima ipotesi su questi dati.** Ogni ipotesi in più
+  alza la soglia del DSR per tutte le precedenti: da N = 23 a N = 40 la soglia
+  passa da 0.86 a 0.96 di Sharpe annuo. Continuare a cercare su questo campione
+  rende più difficile, non più facile, dimostrare qualcosa.
 
 ## Questioni aperte
 
@@ -152,7 +167,7 @@ Non ripetere questi test senza una ragione nuova.
 
    | | risultato |
    |---|---|
-   | DSR del differenziale `cloud_exit` − benchmark, N = 22 | **0.025** |
+   | DSR del differenziale `cloud_exit` − benchmark, N = 23 | **0.023** |
    | PSR dello stesso differenziale, senza penalità per N | 0.829 |
    | delta MAR della procedura di selezione, fuori campione | **−0.04** |
    | ρ di rango fra classifica in-sample e out-of-sample | 0.14 |
@@ -168,7 +183,7 @@ Non ripetere questi test senza una ragione nuova.
 2. **Portafoglio invece che segnale.** Il drawdown scende da 38.7% del peggior
    asset singolo a 8.9% di portafoglio a parità di segnale. Dopo la validazione
    è l'unica leva rimasta con un effetto più grande della sua incertezza: vale
-   più di qualunque delta fra le ventidue varianti, e non dipende da una
+   più di qualunque delta fra le ventitré varianti, e non dipende da una
    selezione. Con 15-20 strumenti e vol targeting scende ancora.
 
 3. **Parity test contro il Pine.** Mai eseguito, e ora l'unica verifica aperta

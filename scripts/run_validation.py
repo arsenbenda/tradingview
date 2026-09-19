@@ -11,15 +11,16 @@ viene misurato? Quattro prove, dalla più indulgente alla più severa.
    nulla che venga adattato in-sample, e il candidato è stato comunque scelto
    conoscendo tutto il periodo.
 2. **Walk-forward con selezione.** Dentro ogni finestra di training viene
-   rieseguita l'intera procedura di ricerca — ventitré varianti, si tiene la
-   migliore per MAR — e il risultato si misura sulla finestra successiva, mai
+   rieseguita l'intera procedura di ricerca — tutto il catalogo più la rinuncia
+   al filtro, si tiene la migliore per MAR — e il risultato si misura sulla finestra successiva, mai
    vista. È il test della *procedura*, non del suo vincitore, ed è l'unica delle
    quattro che riproduce onestamente cosa sarebbe successo decidendo in tempo
    reale.
 3. **K-fold purgato con embargo.** Cinque blocchi, training purgato dei 200
    giorni che precedono il test (la durata massima osservata di un trade) e in
    embargo per i 40 che lo seguono.
-4. **Deflated Sharpe Ratio** su N = 22 ipotesi provate, più un bootstrap a
+4. **Deflated Sharpe Ratio** su N ipotesi provate (``hypotheses.N_HYPOTHESES``),
+   più un bootstrap a
    blocchi circolari per un intervallo di confidenza sul delta di MAR.
 
 Uso: python3 scripts/run_validation.py [--boot 2000]
@@ -261,7 +262,7 @@ def main() -> int:
 
     print("\n  Il benchmark, che non è stato scelto da nessuna procedura, passa esattamente")
     print("  come il candidato: undici anni di esposizione a un trend follower bastano a")
-    print("  rendere lo Sharpe assoluto significativo, e le ventidue ipotesi sono varianti")
+    print(f"  rendere lo Sharpe assoluto significativo, e le {H.N_HYPOTHESES} ipotesi sono varianti")
     print("  della stessa esposizione, quindi poco disperse e con una soglia bassa. Il test")
     print("  sullo Sharpe assoluto non risponde alla domanda: non separa il candidato dalla")
     print("  cosa banale che doveva battere.")

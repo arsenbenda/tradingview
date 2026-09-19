@@ -31,6 +31,7 @@ Filter = tuple[pd.Series, pd.Series]  # (long consentito, short consentito)
 
 ANCHOR_LEN = 252   # 52 settimane
 SLOPE_LEN = 26     # periodo del Kijun, non un valore scelto da noi
+AVWAP_LOOKBACK = 50   # default dichiarato dall'autore di IQ-DAS, non scelto da noi
 
 
 def _all(df: pd.DataFrame, value: bool = True) -> pd.Series:
@@ -144,6 +145,65 @@ def ctrl_mid_lineare(df: pd.DataFrame) -> Filter:
 
 
 # --------------------------------------------------------------------------
+# AVWAP ancorato — ipotesi pre-registrata in results/prereg_peak_avwap.md
+# --------------------------------------------------------------------------
+
+def _anchored_vwap(df: pd.DataFrame, lookback: int = AVWAP_LOOKBACK
+                   ) -> tuple[pd.Series, pd.Series]:
+    """VWAP ancorate all'estremo della finestra precedente.
+
+    Restituisce ``(peak_avwap, trough_avwap)``: la prima ancorata alla barra del
+    massimo, la seconda a quella del minimo, entrambe cercate nelle ``lookback``
+    barre che terminano in ``t-1``.
+
+    La finestra è spostata di una barra per la stessa ragione dei canali di
+    Donchian: se l'àncora potesse essere la barra su cui si decide, la
+    condizione sarebbe in parte autoreferenziale — e sulla barra di rottura
+    l'àncora *sarebbe* sempre quella barra, rendendo la media un punto solo.
+
+    A parità di massimo vince la barra più vecchia (``argmax`` restituisce la
+    prima): è una convenzione, dichiarata perché nei plateau cambia l'àncora.
+    """
+    high, low = df["high"].to_numpy(float), df["low"].to_numpy(float)
+    tp = ((df["high"] + df["low"] + df["close"]) / 3.0).to_numpy(float)
+    vol = df["volume"].to_numpy(float)
+
+    # somme cumulate con uno zero davanti: la somma su [o, t] è cum[t+1]-cum[o]
+    cum_pv = np.concatenate(([0.0], np.cumsum(tp * vol)))
+    cum_v = np.concatenate(([0.0], np.cumsum(vol)))
+
+    n = len(df)
+    peak = np.full(n, np.nan)
+    trough = np.full(n, np.nan)
+    for t in range(lookback, n):
+        start = t - lookback
+        origins = (start + int(np.argmax(high[start:t])),
+                   start + int(np.argmin(low[start:t])))
+        for origin, out in zip(origins, (peak, trough)):
+            volume = cum_v[t + 1] - cum_v[origin]
+            if volume > 0:
+                out[t] = (cum_pv[t + 1] - cum_pv[origin]) / volume
+
+    return pd.Series(peak, index=df.index), pd.Series(trough, index=df.index)
+
+
+def peak_avwap(df: pd.DataFrame) -> Filter:
+    """Il prezzo ha riconquistato l'AVWAP ancorato all'estremo precedente?
+
+    È l'unica componente di `IQ Dual Anchor Setup [IQ-TRADER]` che non ricada in
+    una famiglia già misurata qui: a differenza di Ichimoku e Gann guarda i
+    **volumi reali**, non solo la geometria del prezzo. Ipotesi singola,
+    dichiarata prima del test in `results/prereg_peak_avwap.md`.
+
+    Simmetrica per costruzione: long sopra l'AVWAP del massimo, short sotto
+    quella del minimo — in entrambi i casi ci si ancora all'estremo da cui si
+    riparte.
+    """
+    peak, trough = _anchored_vwap(df)
+    return (df["close"] > peak).fillna(False), (df["close"] < trough).fillna(False)
+
+
+# --------------------------------------------------------------------------
 # indicatori occidentali, come termine di paragone
 # --------------------------------------------------------------------------
 
@@ -173,6 +233,7 @@ CATALOGUE = {
     "gann_oct_4_8": gann_oct_4_8,
     "gann_oct_5_8": gann_oct_5_8,
     "ctrl_mid_lineare": ctrl_mid_lineare,
+    "peak_avwap": peak_avwap,
     "adx_15": adx_15,
     "sma_200": sma_200,
 }
