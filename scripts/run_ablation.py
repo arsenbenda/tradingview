@@ -63,7 +63,7 @@ def evaluate(universe, gate=None):
 
 
 def main() -> int:
-    universe = {k: v[v.index >= "2015-08-08"] for k, v in data.load_universe().items()}
+    universe = {k: v[v.index >= data.DEFAULT_START] for k, v in data.load_universe().items()}
     start, end = data.common_period(universe)
     print(f"periodo: {start.date()} -> {end.date()} | base: Donchian 55/20 long-short")
 

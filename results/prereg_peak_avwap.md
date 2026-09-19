@@ -154,20 +154,42 @@ secondo col primo non è un test dell'idea, è una contraddizione nei termini.
 lo ha misurato — non poteva. L'esperimento informativo sarebbe l'AVWAP **come
 segnale autonomo**, come si è fatto per Ichimoku quando l'ablazione dei filtri
 aveva dato lo stesso tipo di risposta muta. Sarebbe un'ipotesi nuova, con la sua
-pre-registrazione, e porterebbe N a 24.
+pre-registrazione, e porterebbe N a 27.
 
 ### Effetto sul conteggio
 
-`N_HYPOTHESES` passa da 22 a 23, e con esso la soglia del Deflated Sharpe per
-tutte le affermazioni precedenti:
+`N_HYPOTHESES` passa da **25 a 26**, e con esso la soglia del Deflated Sharpe
+per tutte le affermazioni precedenti:
 
-| | N = 22 | N = 23 |
+| | N = 25 | N = 26 |
 |---|---|---|
-| soglia sul differenziale (Sharpe annuo) | 0.85 | **0.86** |
-| DSR di `cloud_exit` − benchmark | 0.025 | **0.023** |
+| soglia sul differenziale grezzo (Sharpe annuo) | 1.400 | **1.411** |
+| DSR di `cloud_exit` − benchmark, grezzo | 0.000057 | **0.000049** |
+| soglia sul differenziale a parità di volatilità | 0.937 | **0.945** |
+| DSR di `cloud_exit` − benchmark, vol matched | 0.0538 | **0.0508** |
 
-Il candidato più promettente del progetto vale un po' meno di ieri per il solo
-fatto che si è provata un'altra cosa. È il prezzo dichiarato in partenza, ed è
-il motivo per cui la regola resta valida: **ogni ipotesi in più costa a tutte le
-precedenti.** Questa è stata pagata consapevolmente, per una componente che non
-era mai stata misurata e che guardava i volumi invece della geometria.
+Il differenziale di `peak_avwap` è identicamente nullo, quindi il suo Sharpe non
+è definito: la variante è **contata in N** — come devono esserlo `gann_1x1`,
+`gann_1x2` e `ichi_chikou` — ma esclusa dal calcolo della dispersione, che resta
+0.0367. L'unico effetto sulla soglia è quello di N, ed è quello che si vede
+sopra.
+
+È il prezzo dichiarato in partenza, ed è il motivo per cui la regola resta
+valida: **ogni ipotesi in più costa a tutte le precedenti.** Qui è stato pagato
+consapevolmente, per una componente mai misurata e che guardava i volumi invece
+della geometria. Il test informativo che resta — l'AVWAP come *segnale
+autonomo*, non come gate — porterebbe N a 27, e va pre-registrato a parte.
+
+## Nota sulla cronologia
+
+La pre-registrazione qui sopra e la sua esecuzione sono state scritte a partire
+dallo stato del progetto al commit `4f31b0c`, quando il catalogo contava 22
+ipotesi. Nel frattempo il branch era andato avanti di ventisei commit —
+universo esteso, parity chiuso, tre ipotesi aggiunte — e al merge il catalogo ne
+contava già 25.
+
+**La misura non è cambiata di una cifra** sul motore aggiornato: stesso delta
+nullo, stessi 5 ingressi bloccati su 1.728, stesse curve di equity identiche. È
+cambiata solo la contabilità di N, corretta qui sopra ai valori veri. La
+specifica, la regola di decisione e la previsione restano quelle committate
+prima del test, in `4da2166`, e non sono state toccate.

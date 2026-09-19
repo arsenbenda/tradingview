@@ -404,11 +404,10 @@ def evaluate(universe: dict[str, pd.DataFrame], runner, segments,
                             trades=[], exposure=float("nan")), capital, years=total_years),
             {}, empty)
 
-    # capitale in parti uguali sugli asset, come in metrics.portfolio_equity:
-    # senza una regola di allocazione dichiarata qualunque altro peso sarebbe
-    # una scelta presa guardando i risultati.
-    frame = pd.concat(per_asset_returns, axis=1).sort_index()
-    pf_returns = frame.fillna(0.0).mean(axis=1)
+    # stessa aggregazione di metrics.portfolio_equity, e non una copia: un
+    # portafoglio calcolato in due modi diversi nel benchmark e nella
+    # validazione renderebbe incomparabili i due numeri che servono a confronto
+    pf_returns = metrics.equal_weight_returns(per_asset_returns)
     pf_equity = capital * (1 + pf_returns).cumprod()
     stats = metrics.compute(
         backtest.Result(equity=pf_equity, trades=all_trades, exposure=float("nan")),
@@ -449,6 +448,29 @@ def differential_returns(strategy: pd.Series, benchmark: pd.Series) -> pd.Series
     """
     frame = pd.concat({"s": strategy, "b": benchmark}, axis=1).sort_index().fillna(0.0)
     return frame["s"] - frame["b"]
+
+
+def volatility_matched(strategy: pd.Series, benchmark: pd.Series) -> pd.Series:
+    """``strategy`` riscalata alla volatilità di ``benchmark``.
+
+    Serve prima di differenziare due strategie che non lavorano alla stessa
+    scala. Il differenziale grezzo di una strategia che gira a tre volte la
+    volatilità del benchmark ha una media positiva **per costruzione**, e uno
+    Sharpe differenziale che misura la scala invece del vantaggio: è la stessa
+    trappola del MAR che lusinga la leva, spostata di una formula.
+
+    Il fattore è costante e stimato su tutto il periodo, quindi **non** è una
+    serie realizzabile in tempo reale: è una normalizzazione dichiarata, per
+    rendere confrontabile un differenziale, non una strategia.
+
+    Per le varianti che girano allo stesso ``risk_pct`` del benchmark il fattore
+    è vicino a 1 e non cambia nulla — che è il motivo per cui si può applicare a
+    tutte senza trattarne una in modo speciale.
+    """
+    sd_s, sd_b = strategy.std(), benchmark.std()
+    if not np.isfinite(sd_s) or sd_s <= 0 or not np.isfinite(sd_b):
+        return strategy
+    return strategy * (sd_b / sd_s)
 
 
 def rank_correlation(a: dict[str, float], b: dict[str, float]) -> float:

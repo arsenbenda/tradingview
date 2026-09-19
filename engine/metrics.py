@@ -95,21 +95,48 @@ def compute(result: Result, initial_capital: float = 100_000.0,
     )
 
 
+def equal_weight_returns(per_asset: dict[str, pd.Series]) -> pd.Series:
+    """Rendimenti di un portafoglio equipesato, su calendari disomogenei.
+
+    Capitale diviso in parti uguali: senza una regola di allocazione dichiarata,
+    qualunque peso diverso sarebbe una scelta presa guardando i risultati.
+
+    Ci sono due modi diversi in cui un rendimento può mancare, e confonderli
+    falsa il portafoglio senza sollevare errori:
+
+    * **mercato chiuso** — lo strumento esiste, il capitale è allocato, quel
+      giorno la sua quota rende zero. Il denominatore lo conta. È il caso di un
+      ETF nel weekend mentre le crypto scambiano;
+    * **strumento non ancora quotato, o già uscito** — il capitale non è
+      allocato, perché non c'è niente su cui allocarlo. Il denominatore **non**
+      lo deve contare.
+
+    Trattare il secondo caso come il primo divide per strumenti che non
+    esistono, e diluisce i rendimenti di quelli che esistono in proporzione a
+    quanti non sono ancora nati: con sei asset che partono lo stesso giorno non
+    si vede, con quindici strumenti di quotazione diversa dimezza i rendimenti
+    dei primi anni. Ogni strumento contribuisce quindi solo fra la sua prima e
+    la sua ultima barra.
+    """
+    frame = pd.concat(per_asset, axis=1).sort_index()
+
+    vivo = pd.DataFrame(False, index=frame.index, columns=frame.columns)
+    for col in frame.columns:
+        inizio, fine = frame[col].first_valid_index(), frame[col].last_valid_index()
+        if inizio is not None:
+            vivo[col] = (frame.index >= inizio) & (frame.index <= fine)
+
+    # dentro la vita dello strumento il mercato chiuso vale zero; fuori, NaN,
+    # che `mean` scarta insieme al denominatore
+    return frame.fillna(0.0).where(vivo).mean(axis=1).fillna(0.0)
+
+
 def portfolio_equity(results: dict[str, Result], initial_capital: float = 100_000.0) -> pd.Series:
     """Aggrega i risultati per asset in un'unica curva.
 
     Gli asset hanno calendari diversi (crypto 7 giorni, ETF 5), quindi si
-    aggregano i **rendimenti** su un indice unione, con rendimento nullo nei
-    giorni in cui un mercato è chiuso. Capitale diviso in parti uguali: senza
-    una regola di allocazione dichiarata, qualunque peso diverso sarebbe una
-    scelta presa guardando i risultati.
+    aggregano i **rendimenti** su un indice unione, non i prezzi: forzare un
+    merge inventerebbe barre nei weekend o cancellerebbe quelle crypto.
     """
-    per_asset = []
-    for name, res in results.items():
-        r = res.equity.pct_change()
-        r.name = name
-        per_asset.append(r)
-
-    frame = pd.concat(per_asset, axis=1).sort_index()
-    combined = frame.fillna(0.0).mean(axis=1)
-    return initial_capital * (1 + combined).cumprod()
+    return initial_capital * (1 + equal_weight_returns(
+        {name: res.equity.pct_change() for name, res in results.items()})).cumprod()

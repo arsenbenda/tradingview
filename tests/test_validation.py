@@ -377,24 +377,31 @@ def test_la_probabilita_negativa_e_coerente_con_i_quantili():
 # il conteggio delle ipotesi
 # --------------------------------------------------------------------------
 
-def test_il_catalogo_conta_ventitre_ipotesi():
+def test_il_catalogo_conta_ventisei_ipotesi():
     """Il numero che entra nel Deflated Sharpe non può divergere dal provato.
 
-    Il valore è scritto a mano di proposito: è un tripwire. Chi aggiunge
-    un'ipotesi deve bumparlo consapevolmente, perché alzare N alza la soglia del
-    DSR per tutte le affermazioni precedenti — non è un dettaglio contabile.
+    Se questo test fallisce dopo aver aggiunto una voce al catalogo, **non** va
+    aggiornato di riflesso: va prima ricalcolato il DSR, perché ogni ipotesi in
+    più alza la soglia per tutte le precedenti. Aggiornare il numero e basta
+    lascerebbe pubblicati dei DSR calcolati con un N che non esiste più.
 
-    Storia del conteggio, per non perderla:
+    Passato da 23 a 24 il 2026-09-15 con `sanyaku_v55`, e il DSR è stato
+    ricalcolato prima di toccare questa riga: `results/validation.md`, sezione
+    «Rifacimento con N = 24».
 
-    * 22 — quindici filtri, tre segnali Ichimoku, quattro uscite;
-    * 23 — `filter_peak_avwap`, l'unica componente nuova estratta da
-      `IQ Dual Anchor Setup [IQ-TRADER]`, pre-registrata in
-      `results/prereg_peak_avwap.md`.
+    Passato da 25 a 26 il 2026-09-19 con `filter_peak_avwap`, pre-registrata in
+    `results/prereg_peak_avwap.md`. Anche qui il DSR è stato ricalcolato prima:
+    la soglia grezza va da 1.400 a 1.411, quella a parità di volatilità da 0.937
+    a 0.945, e il DSR vol-matched di `cloud_exit` da 0.0538 a 0.0508.
     """
-    assert hypotheses.N_HYPOTHESES == 23
+    assert hypotheses.N_HYPOTHESES == 26
     assert len(hypotheses.CATALOGUE) == hypotheses.N_HYPOTHESES
     assert hypotheses.BASE_NAME not in hypotheses.CATALOGUE
     assert hypotheses.CANDIDATE in hypotheses.CATALOGUE
+    assert "sizing_notional" in hypotheses.CATALOGUE
+    assert "sanyaku_v55" in hypotheses.CATALOGUE
+    assert "canali_su_chiusure" in hypotheses.CATALOGUE
+    assert "filter_peak_avwap" in hypotheses.CATALOGUE
 
 
 def test_il_pool_di_selezione_contiene_anche_la_rinuncia():
@@ -412,3 +419,59 @@ def test_metrics_compute_accetta_gli_anni_espliciti():
     esplicito = metrics.compute(res, 100_000.0, years=2.0)
     assert esplicito.cagr == pytest.approx(1.21 ** 0.5 - 1, rel=1e-9)
     assert esplicito.cagr < dedotto.cagr
+
+
+# --------------------------------------------------------------------------
+# normalizzazione di scala prima del differenziale
+# --------------------------------------------------------------------------
+
+def test_riscalare_porta_la_volatilita_su_quella_del_benchmark():
+    rng = np.random.default_rng(11)
+    idx = pd.date_range("2016-01-01", periods=600, freq="D")
+    base = pd.Series(rng.normal(0.0004, 0.01, 600), index=idx)
+    grossa = base * 3.0 + 0.001
+    fuori = v.volatility_matched(grossa, base)
+    assert fuori.std() == pytest.approx(base.std(), rel=1e-9)
+
+
+def test_riscalare_non_cambia_lo_sharpe():
+    """È una normalizzazione di scala: sposta la volatilità, non il vantaggio."""
+    rng = np.random.default_rng(12)
+    idx = pd.date_range("2016-01-01", periods=600, freq="D")
+    base = pd.Series(rng.normal(0.0004, 0.01, 600), index=idx)
+    grossa = base.shift(1).fillna(0.0) * 2.5
+    assert v.sharpe_per_bar(v.volatility_matched(grossa, base)) == pytest.approx(
+        v.sharpe_per_bar(grossa), rel=1e-9)
+
+
+def test_riscalare_una_serie_gia_alla_stessa_scala_non_fa_niente():
+    rng = np.random.default_rng(13)
+    idx = pd.date_range("2016-01-01", periods=300, freq="D")
+    base = pd.Series(rng.normal(0.0, 0.01, 300), index=idx)
+    pd.testing.assert_series_equal(v.volatility_matched(base, base), base)
+
+
+def test_riscalare_una_serie_piatta_la_lascia_stare():
+    """Volatilità nulla: non c'è fattore che la porti da nessuna parte."""
+    idx = pd.date_range("2016-01-01", periods=50, freq="D")
+    piatta = pd.Series(0.0, index=idx)
+    altra = pd.Series(0.01, index=idx)
+    pd.testing.assert_series_equal(v.volatility_matched(piatta, altra), piatta)
+
+
+def test_il_differenziale_a_parita_di_scala_toglie_il_vantaggio_di_pura_scala():
+    """Una strategia che e' il benchmark moltiplicato per k non ha vantaggio.
+
+    Il differenziale grezzo pero' e' positivo per costruzione: e' la trappola che
+    la sezione 4c di run_validation.py evita.
+    """
+    rng = np.random.default_rng(14)
+    idx = pd.date_range("2016-01-01", periods=800, freq="D")
+    base = pd.Series(rng.normal(0.0005, 0.01, 800), index=idx)
+    solo_scala = base * 3.0
+
+    grezzo = v.differential_returns(solo_scala, base)
+    assert grezzo.mean() > 0
+
+    corretto = v.differential_returns(v.volatility_matched(solo_scala, base), base)
+    assert corretto.abs().max() == pytest.approx(0.0, abs=1e-12)

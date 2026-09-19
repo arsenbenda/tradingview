@@ -30,6 +30,7 @@ percorso di esecuzione, quindi nessuna possibilità che i due divergano.
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -75,6 +76,19 @@ class Result:
     equity: pd.Series
     trades: list[Trade] = field(default_factory=list)
     exposure: float = 0.0
+    #: intenzione decisa alla chiusura dell'ultima barra, da eseguire
+    #: all'apertura della successiva. ``None`` se la strategia non apre.
+    #: Serve al log forward: e' la sola parte del risultato che riguarda una
+    #: barra che non esiste ancora, e va registrata prima di conoscerne l'esito.
+    pending: "Intent | None" = None
+    #: posizione viva all'ultima barra, **prima** della chiusura d'ufficio di
+    #: fine serie. In backtest quella chiusura e' corretta (serve a misurare);
+    #: in avanti no, perche' la posizione e' davvero ancora aperta.
+    open_position: "Trade | None" = None
+    #: livello di stop della posizione viva. Non sta in ``Trade``, che registra
+    #: com'e' andata e non dove sta lo stop adesso, ma e' la meta' della
+    #: decisione che un registro forward deve poter scrivere.
+    open_stop: float | None = None
 
     @property
     def returns(self) -> pd.Series:
@@ -201,12 +215,19 @@ def run_strategy(
     initial_capital: float = 100_000.0,
     max_notional_pct: float = 1.0,
     size_at_signal: bool = False,
+    notional_sizing: bool = False,
 ) -> Result:
     """Esegue una strategia a posizione singola.
 
     ``size_at_signal=True`` riproduce il comportamento Pine: quantità e stop
     ancorati al close della barra di segnale invece che al prezzo di fill.
     Serve a misurare il costo di quel difetto, non a usarlo.
+
+    ``notional_sizing=True`` sostituisce la regola di dimensionamento: la
+    posizione vale ``max_notional_pct`` del capitale disponibile invece di
+    ``rischio / distanza dello stop``. Lo stop continua a governare le uscite,
+    ma non la quantità — quindi la volatilità dello strumento non entra più nel
+    sizing. È l'ipotesi 23 del catalogo, e ``risk_pct`` diventa inerte.
     """
     strategy.prepare(df)
 
@@ -262,8 +283,14 @@ def run_strategy(
             if dist > 0 and np.isfinite(dist):
                 fill = open_[i] * (1 + costs.per_side) if intent.direction > 0 else open_[i] * (1 - costs.per_side)
                 anchor = signal_close if size_at_signal else fill
-                risk_amount = st.cash * risk_pct * intent.risk_mult
-                size = min(risk_amount / dist, st.cash * max_notional_pct / fill)
+                if notional_sizing:
+                    size = st.cash * max_notional_pct / fill
+                    # il rischio non è più un input ma una conseguenza: tenerlo
+                    # nominale renderebbe incomparabili gli R fra le due regole
+                    risk_amount = size * dist
+                else:
+                    risk_amount = st.cash * risk_pct * intent.risk_mult
+                    size = min(risk_amount / dist, st.cash * max_notional_pct / fill)
                 if size > 0:
                     st.direction, st.entry_price, st.entry_index = intent.direction, fill, i
                     st.entry_tag = intent.tag
@@ -299,12 +326,22 @@ def run_strategy(
             if intent is not None and intent.direction != 0:
                 pending = (intent, close[i])
 
+    # fotografia dello stato prima della chiusura d'ufficio: e' quello che un
+    # sistema in funzione avrebbe davvero in mano alla fine dell'ultima barra
+    # copia, non riferimento: la chiusura d'ufficio qui sotto muta lo stesso
+    # oggetto (azzera qty, scrive exit_*), e un riferimento ne uscirebbe con la
+    # quantita' a zero — cioe' una posizione aperta che sembra chiusa.
+    aperta = dataclasses.replace(trades[-1]) if (trades and not st.flat) else None
+    stop_aperto = float(st.stop_level) if (aperta is not None and np.isfinite(st.stop_level)) else None
+    in_attesa = pending[0] if pending is not None else None
+
     if not st.flat:
         close_position(n - 1, close[-1], "fine serie")
         equity[-1] = st.cash
 
     return Result(equity=pd.Series(equity, index=idx), trades=trades,
-                  exposure=bars_in_market / n if n else 0.0)
+                  exposure=bars_in_market / n if n else 0.0,
+                  pending=in_attesa, open_position=aperta, open_stop=stop_aperto)
 
 
 def run(
@@ -322,10 +359,11 @@ def run(
     trail_stop: pd.Series | None = None,
     tags: pd.Series | None = None,
     size_at_signal: bool = False,
+    notional_sizing: bool = False,
 ) -> Result:
     """Esegue una strategia espressa come serie di segnali."""
     strategy = _SignalStrategy(entry_long, exit_long, entry_short, exit_short,
                                stop_distance, trail_stop, tags, df.index)
     return run_strategy(df, strategy, costs=costs, risk_pct=risk_pct,
                         initial_capital=initial_capital, max_notional_pct=max_notional_pct,
-                        size_at_signal=size_at_signal)
+                        size_at_signal=size_at_signal, notional_sizing=notional_sizing)
